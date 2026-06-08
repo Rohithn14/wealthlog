@@ -1,34 +1,7 @@
-"""CLI database bootstrap helper.
-
-On first use the CLI ensures the schema exists and seeds default categories. For a
-local single-user app this ``create_all``-based bootstrap matches the Alembic head;
-Alembic remains the path for evolving the schema across releases.
-"""
+"""CLI database bootstrap helpers (re-exported from :mod:`wealthlog.bootstrap`)."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from wealthlog.bootstrap import ensure_db, session_scope
 
-from sqlmodel import Session, select
-
-from wealthlog.db.models import Category
-from wealthlog.db.seed import seed_categories
-from wealthlog.db.session import create_db_and_tables, get_engine
-
-
-def ensure_db() -> None:
-    """Create tables and seed default categories if absent (idempotent)."""
-    engine = get_engine()
-    create_db_and_tables(engine)
-    with Session(engine) as session:
-        if session.exec(select(Category)).first() is None:
-            seed_categories(session)
-
-
-@contextmanager
-def session_scope() -> Iterator[Session]:
-    """Yield a session against the bootstrapped database."""
-    ensure_db()
-    with Session(get_engine()) as session:
-        yield session
+__all__ = ["ensure_db", "session_scope"]
