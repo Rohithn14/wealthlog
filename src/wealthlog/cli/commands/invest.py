@@ -172,6 +172,40 @@ def pnl(
         console.print(f"P&L:      [{color}]{fmt_inr(result.pnl_abs_inr)} ({pct})[/{color}]")
 
 
+@app.command("refresh")
+def refresh(
+    force: Annotated[bool, typer.Option("--force", help="Ignore cache freshness")] = False,
+) -> None:
+    """Fetch live prices for all holdings (yfinance / mfapi / FX), with caching."""
+    from wealthlog.services.fetcher import FetcherService
+
+    with session_scope() as session:
+        svc = FetcherService(session)
+        result = svc.refresh_prices(force=force)
+        console.print(f"[green]Updated:[/green] {', '.join(result.updated) or '—'}")
+        if result.skipped_fresh:
+            console.print(f"[dim]Fresh (skipped): {', '.join(result.skipped_fresh)}[/dim]")
+        for symbol, err in result.failed:
+            console.print(f"[red]Failed {symbol}:[/red] {err}")
+
+
+@app.command("set-price")
+def set_price(
+    symbol: Annotated[str, typer.Argument()],
+    price_inr: Annotated[str, typer.Argument(help="Manual INR price per unit")],
+) -> None:
+    """Manually set an INR price for a holding (override / offline fallback)."""
+    from wealthlog.services.fetcher import FetcherService
+
+    with session_scope() as session:
+        inv = _resolve_investment(session, symbol)
+        svc = FetcherService(session)
+        svc.set_manual_price(inv.id, price_inr)
+        console.print(
+            f"[green]Set manual price for {symbol}:[/green] {fmt_inr(Decimal(price_inr))}"
+        )
+
+
 @app.command("xirr")
 def xirr(
     symbol: Annotated[str | None, typer.Option("--symbol", "-s")] = None,
