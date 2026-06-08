@@ -1,8 +1,8 @@
 """wealthlog command-line interface (Typer).
 
-This is the scriptable entry point exposed as the ``wealthlog-cli`` console script.
-Milestone 0 ships the app skeleton and a ``version`` command; feature command groups
-(expense, invest, budget, networth, export) are added in Milestone 3.
+Scriptable entry point exposed as the ``wealthlog-cli`` console script. Command groups:
+``expense``, ``category``, ``budget``, ``invest``, and ``networth`` — together giving
+full feature parity with the service layer.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import typer
 
 from wealthlog import __version__
+from wealthlog.cli.commands import budget, category, expense, invest, networth
 
 app = typer.Typer(
     name="wealthlog",
@@ -17,6 +18,12 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=True,
 )
+
+app.add_typer(expense.app, name="expense")
+app.add_typer(category.app, name="category")
+app.add_typer(budget.app, name="budget")
+app.add_typer(invest.app, name="invest")
+app.add_typer(networth.app, name="networth")
 
 
 @app.callback()
