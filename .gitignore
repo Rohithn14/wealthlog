@@ -1,6 +1,22 @@
+# Databases & secrets
 *.db
+*.sqlite3
 .env
+
+# Python
 __pycache__/
+*.py[cod]
 .venv/
 dist/
 build/
+*.egg-info/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# OS
+.DS_Store
