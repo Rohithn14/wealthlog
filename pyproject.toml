@@ -30,6 +30,7 @@ wealthlog = "wealthlog.api.server:main"
 wealthlog-tui = "wealthlog.tui.app:main"
 wealthlog-cli = "wealthlog.cli.main:app"
 wealthlog-alerts = "wealthlog.alerts.watcher:main"
+wealthlog-sidecar = "wealthlog.sidecar.app:main"
 
 [project.urls]
 Homepage = "https://github.com/Rohithn14/wealthlog"
