@@ -13,6 +13,7 @@ from wealthlog.cli._db import session_scope
 from wealthlog.cli._render import console, fmt_inr, fmt_ratio_as_pct, make_table
 from wealthlog.constants import AssetType, CompoundingFrequency, TransactionType
 from wealthlog.db.models import Investment
+from wealthlog.services.concentration import ConcentrationService
 from wealthlog.services.dividends import DividendService
 from wealthlog.services.portfolio import PortfolioService
 from wealthlog.services.sip import SIPService
@@ -289,6 +290,53 @@ def sip_due(
             table.add_row(str(p.due_date), p.symbol, fmt_inr(p.amount_inr))
         console.print(table)
         console.print(f"[yellow]{len(pending)} instalment(s) pending.[/yellow]")
+
+
+@app.command("concentration")
+def concentration(
+    top: Annotated[int, typer.Option("--top", help="Number of largest holdings")] = 10,
+    threshold: Annotated[
+        float, typer.Option("--threshold", help="High-concentration weight %")
+    ] = 10.0,
+) -> None:
+    """Show single-name, sector, and asset-class concentration."""
+    with session_scope() as session:
+        report = ConcentrationService(session).concentration_report(
+            top_n=top, threshold_pct=str(threshold)
+        )
+        if report.total_value_inr <= 0:
+            console.print("[dim]No holdings to analyse.[/dim]")
+            return
+        console.print(f"Total portfolio value: {fmt_inr(report.total_value_inr)}")
+        holdings = make_table(
+            f"Top {top} holdings", ["Symbol", "Name", "Value", "Weight"]
+        )
+        for r in report.top_holdings:
+            weight = f"{r.pct_of_total:.2f}%"
+            if r.is_concentrated:
+                weight = f"[red]{weight} ⚠[/red]"
+            holdings.add_row(r.symbol, r.name, fmt_inr(r.market_value_inr), weight)
+        console.print(holdings)
+        for title, rows in (
+            ("By sector", report.by_sector),
+            ("By asset class", report.by_asset_class),
+        ):
+            table = make_table(title, ["Category", "Value", "Weight"])
+            for w in rows:
+                table.add_row(w.label, fmt_inr(w.market_value_inr), f"{w.pct_of_total:.2f}%")
+            console.print(table)
+
+
+@app.command("set-sector")
+def set_sector(
+    symbol: Annotated[str, typer.Argument(help="Investment symbol")],
+    sector: Annotated[str, typer.Argument(help="Sector label, e.g. IT, Banking")],
+) -> None:
+    """Tag an investment with a sector (used by concentration analysis)."""
+    with session_scope() as session:
+        inv = _resolve_investment(session, symbol)
+        PortfolioService(session).set_sector(inv.id, sector)
+        console.print(f"[green]Set sector for {symbol}:[/green] {sector}")
 
 
 @app.command("dividends")

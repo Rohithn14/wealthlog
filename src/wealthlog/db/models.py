@@ -126,6 +126,7 @@ class Investment(SQLModel, table=True):
     asset_type: AssetType = Field(index=True)
     currency_native: str = "INR"
     exchange: str | None = None  # e.g. "NSE", "NASDAQ"
+    sector: str | None = None  # e.g. "IT", "Banking" — for concentration analysis
 
 
 class Transaction(SQLModel, table=True):

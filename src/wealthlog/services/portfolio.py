@@ -51,6 +51,7 @@ class PortfolioService:
         asset_type: AssetType,
         currency_native: str = "INR",
         exchange: str | None = None,
+        sector: str | None = None,
     ) -> Investment:
         """Create an investment record and return it."""
         inv = Investment(
@@ -59,11 +60,22 @@ class PortfolioService:
             asset_type=asset_type,
             currency_native=currency_native,
             exchange=exchange,
+            sector=sector,
         )
         self.session.add(inv)
         self.session.commit()
         self.session.refresh(inv)
         return inv
+
+    def set_sector(self, investment_id: int, sector: str | None) -> bool:
+        """Set/clear an investment's sector tag; ``True`` if it existed."""
+        inv = self.session.get(Investment, investment_id)
+        if inv is None:
+            return False
+        inv.sector = sector
+        self.session.add(inv)
+        self.session.commit()
+        return True
 
     def add_fd(
         self,

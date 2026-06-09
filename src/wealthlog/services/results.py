@@ -135,3 +135,34 @@ class DividendRow:
     name: str
     total_inr: Decimal
     trailing_yield_pct: Decimal | None
+
+
+@dataclass(frozen=True)
+class ConcentrationRow:
+    """A single holding's weight in the portfolio by market value."""
+
+    symbol: str
+    name: str
+    market_value_inr: Decimal
+    pct_of_total: Decimal
+    is_concentrated: bool  # weight exceeds the high-concentration threshold
+
+
+@dataclass(frozen=True)
+class WeightRow:
+    """A category (sector or asset class) weight by market value."""
+
+    label: str
+    market_value_inr: Decimal
+    pct_of_total: Decimal
+
+
+@dataclass(frozen=True)
+class ConcentrationReport:
+    """Portfolio concentration: top holdings plus sector and asset-class weights."""
+
+    total_value_inr: Decimal
+    threshold_pct: Decimal
+    top_holdings: list[ConcentrationRow]
+    by_sector: list[WeightRow]
+    by_asset_class: list[WeightRow]
