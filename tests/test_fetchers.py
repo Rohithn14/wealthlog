@@ -85,6 +85,18 @@ class TestFrankfurterFetcher:
         with pytest.raises(FetchError):
             FrankfurterFetcher().get_rate("USD", "INR")
 
+    @respx.mock
+    def test_follows_redirect(self):
+        # Guards against the api.frankfurter.app -> .dev 301 migration breaking fetches.
+        respx.get(f"{FRANKFURTER_BASE_URL}/latest").mock(
+            return_value=httpx.Response(301, headers={"Location": "https://redirected/final"})
+        )
+        respx.get("https://redirected/final").mock(
+            return_value=httpx.Response(200, json={"rates": {"INR": 84.0}})
+        )
+        quote = FrankfurterFetcher().get_rate("USD", "INR")
+        assert quote.rate == Decimal("84.000000")
+
 
 class TestYFinanceFetcher:
     def test_get_price_inr(self, monkeypatch):

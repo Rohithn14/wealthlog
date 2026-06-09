@@ -43,7 +43,9 @@ class MfApiFetcher:
         """
         url = f"{self._base_url}/{scheme_code}"
         try:
-            client = self._client or httpx.Client(timeout=get_config().http_timeout_seconds)
+            client = self._client or httpx.Client(
+                timeout=get_config().http_timeout_seconds, follow_redirects=True
+            )
             close = self._client is None
             try:
                 response = client.get(url)
