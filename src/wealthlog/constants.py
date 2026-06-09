@@ -57,6 +57,14 @@ class RecurrenceFrequency(StrEnum):
     MONTHLY = "MONTHLY"
 
 
+class AlertKind(StrEnum):
+    """Portfolio alert rule kinds (C3)."""
+
+    PRICE_DROP = "PRICE_DROP"  # holding down >= threshold% vs average cost
+    BUDGET_PCT = "BUDGET_PCT"  # category spend >= threshold% of monthly budget
+    SIP_DUE = "SIP_DUE"  # one or more SIP instalments are pending
+
+
 class CompoundingFrequency(StrEnum):
     """Interest compounding frequency for fixed deposits."""
 

@@ -169,6 +169,15 @@ class ConcentrationReport:
 
 
 @dataclass(frozen=True)
+class FiredAlert:
+    """An alert rule that matched during evaluation."""
+
+    rule_id: int
+    kind: str
+    message: str
+
+
+@dataclass(frozen=True)
 class BenchmarkReturn:
     """A benchmark's return over a window, from snapshot prices."""
 

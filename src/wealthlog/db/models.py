@@ -19,6 +19,7 @@ from wealthlog.constants import (
     MONEY_QUANTET,
     PRICE_QUANTET,
     UNITS_QUANTET,
+    AlertKind,
     AssetType,
     CategoryType,
     CompoundingFrequency,
@@ -224,3 +225,29 @@ class FdDetails(SQLModel, table=True):
     start_date: dt.date
     maturity_date: dt.date
     compounding: CompoundingFrequency = Field(default=CompoundingFrequency.QUARTERLY)
+
+
+class AlertRule(SQLModel, table=True):
+    """A user-defined condition evaluated by the alerts watcher (C3)."""
+
+    __tablename__ = "alert_rules"
+
+    id: int | None = Field(default=None, primary_key=True)
+    kind: AlertKind = Field(index=True)
+    threshold: Decimal | None = Field(
+        default=None, sa_column=Column(DecimalText(PRICE_QUANTET), nullable=True)
+    )
+    investment_id: int | None = Field(default=None, foreign_key="investments.id", index=True)
+    category_id: int | None = Field(default=None, foreign_key="categories.id", index=True)
+    active: bool = Field(default=True)
+
+
+class AlertEvent(SQLModel, table=True):
+    """A fired alert, kept for same-day de-duplication and history."""
+
+    __tablename__ = "alert_events"
+
+    id: int | None = Field(default=None, primary_key=True)
+    rule_id: int = Field(foreign_key="alert_rules.id", index=True)
+    fired_on: dt.date = Field(index=True)
+    message: str

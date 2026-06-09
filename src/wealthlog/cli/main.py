@@ -11,6 +11,7 @@ import typer
 
 from wealthlog import __version__
 from wealthlog.cli.commands import (
+    alert,
     budget,
     category,
     expense,
@@ -36,6 +37,7 @@ app.add_typer(invest.app, name="invest")
 app.add_typer(networth.app, name="networth")
 app.add_typer(export.app, name="export")
 app.add_typer(imports.app, name="import")
+app.add_typer(alert.app, name="alert")
 
 
 @app.callback()
