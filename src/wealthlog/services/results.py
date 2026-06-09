@@ -124,3 +124,14 @@ class PendingSIP:
     symbol: str
     due_date: dt.date
     amount_inr: Decimal
+
+
+@dataclass(frozen=True)
+class DividendRow:
+    """Cumulative dividends for a single investment with trailing yield."""
+
+    investment_id: int
+    symbol: str
+    name: str
+    total_inr: Decimal
+    trailing_yield_pct: Decimal | None

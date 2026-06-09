@@ -13,6 +13,7 @@ from wealthlog.cli._db import session_scope
 from wealthlog.cli._render import console, fmt_inr, fmt_ratio_as_pct, make_table
 from wealthlog.constants import AssetType, CompoundingFrequency, TransactionType
 from wealthlog.db.models import Investment
+from wealthlog.services.dividends import DividendService
 from wealthlog.services.portfolio import PortfolioService
 from wealthlog.services.sip import SIPService
 
@@ -288,6 +289,31 @@ def sip_due(
             table.add_row(str(p.due_date), p.symbol, fmt_inr(p.amount_inr))
         console.print(table)
         console.print(f"[yellow]{len(pending)} instalment(s) pending.[/yellow]")
+
+
+@app.command("dividends")
+def dividends(
+    year: Annotated[
+        int | None, typer.Option("--year", "-y", help="Filter to one calendar year")
+    ] = None,
+) -> None:
+    """Show dividends by holding (and yearly totals) with trailing yield."""
+    with session_scope() as session:
+        svc = DividendService(session)
+        rows = svc.total_by_holding(year=year)
+        title = f"Dividends {year}" if year else "Dividends (all time)"
+        table = make_table(title, ["Symbol", "Name", "Total", "TTM Yield"])
+        for r in rows:
+            yld = f"{r.trailing_yield_pct:.2f}%" if r.trailing_yield_pct is not None else "—"
+            table.add_row(r.symbol, r.name, fmt_inr(r.total_inr), yld)
+        console.print(table)
+        if year is None:
+            by_year = svc.total_by_year()
+            if by_year:
+                yt = make_table("By year", ["Year", "Received"])
+                for y, amount in by_year.items():
+                    yt.add_row(str(y), fmt_inr(amount))
+                console.print(yt)
 
 
 @app.command("xirr")
