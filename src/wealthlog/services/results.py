@@ -166,3 +166,33 @@ class ConcentrationReport:
     top_holdings: list[ConcentrationRow]
     by_sector: list[WeightRow]
     by_asset_class: list[WeightRow]
+
+
+@dataclass(frozen=True)
+class GainRow:
+    """One FIFO-matched realised gain: a SELL slice against a single buy lot."""
+
+    symbol: str
+    asset_type: AssetType
+    buy_date: dt.date
+    sell_date: dt.date
+    units: Decimal
+    cost_basis_inr: Decimal
+    proceeds_inr: Decimal
+    gain_inr: Decimal
+    holding_days: int
+    is_long_term: bool
+
+
+@dataclass(frozen=True)
+class CapitalGainsReport:
+    """Capital-gains summary for one financial year (informational, not advice)."""
+
+    financial_year: str
+    rows: list[GainRow]
+    short_term_gain_inr: Decimal
+    long_term_gain_inr: Decimal
+    ltcg_exemption_inr: Decimal
+    taxable_ltcg_inr: Decimal
+    estimated_stcg_tax_inr: Decimal
+    estimated_ltcg_tax_inr: Decimal

@@ -17,6 +17,7 @@ from wealthlog.services.concentration import ConcentrationService
 from wealthlog.services.dividends import DividendService
 from wealthlog.services.portfolio import PortfolioService
 from wealthlog.services.sip import SIPService
+from wealthlog.services.tax import TaxService
 
 app = typer.Typer(help="Track investments, holdings, P&L, and XIRR.", no_args_is_help=True)
 sip_schedule_app = typer.Typer(help="Manage SIP schedules.", no_args_is_help=True)
@@ -290,6 +291,46 @@ def sip_due(
             table.add_row(str(p.due_date), p.symbol, fmt_inr(p.amount_inr))
         console.print(table)
         console.print(f"[yellow]{len(pending)} instalment(s) pending.[/yellow]")
+
+
+@app.command("tax-report")
+def tax_report(
+    fy: Annotated[str, typer.Option("--fy", help="Financial year, e.g. 2025-26")],
+) -> None:
+    """FIFO capital-gains report for a financial year (informational only)."""
+    with session_scope() as session:
+        try:
+            report = TaxService(session).capital_gains_report(fy)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        table = make_table(
+            f"Capital gains FY {report.financial_year}",
+            ["Symbol", "Buy", "Sell", "Units", "Cost", "Proceeds", "Gain", "Term"],
+        )
+        for r in report.rows:
+            color = "green" if r.gain_inr >= 0 else "red"
+            table.add_row(
+                r.symbol, str(r.buy_date), str(r.sell_date), f"{r.units:g}",
+                fmt_inr(r.cost_basis_inr), fmt_inr(r.proceeds_inr),
+                f"[{color}]{fmt_inr(r.gain_inr)}[/{color}]",
+                "LTCG" if r.is_long_term else "STCG",
+            )
+        console.print(table)
+        console.print(f"[bold]Short-term gain:[/bold] {fmt_inr(report.short_term_gain_inr)}")
+        console.print(f"[bold]Long-term gain:[/bold]  {fmt_inr(report.long_term_gain_inr)}")
+        console.print(
+            f"[dim]LTCG exemption {fmt_inr(report.ltcg_exemption_inr)} -> "
+            f"taxable LTCG {fmt_inr(report.taxable_ltcg_inr)}[/dim]"
+        )
+        console.print(
+            f"[bold]Est. tax:[/bold] STCG {fmt_inr(report.estimated_stcg_tax_inr)} + "
+            f"LTCG {fmt_inr(report.estimated_ltcg_tax_inr)}"
+        )
+        console.print(
+            "[yellow]Informational only — not tax advice. Post-Jul-2024 equity rates; "
+            "gold/debt and grandfathering excluded. Verify with a CA.[/yellow]"
+        )
 
 
 @app.command("concentration")

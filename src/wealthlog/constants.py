@@ -77,6 +77,20 @@ YFINANCE_ASSET_TYPES: frozenset[AssetType] = frozenset(
 )
 
 # --------------------------------------------------------------------------- #
+# Capital-gains tax (B2) — INFORMATIONAL ONLY, not tax advice. Post-July-2024
+# rules for listed equity / equity MF. Verify with a CA; gold/debt differ.
+# --------------------------------------------------------------------------- #
+
+#: Holding period (days) at/above which equity gains are long-term.
+EQUITY_LONG_TERM_DAYS: int = 365
+#: LTCG rate on listed equity / equity MF (12.5% from 23 Jul 2024).
+LTCG_RATE: Decimal = Decimal("0.125")
+#: STCG rate on listed equity / equity MF (20% from 23 Jul 2024).
+STCG_RATE: Decimal = Decimal("0.20")
+#: Annual LTCG exemption on equity (₹1.25L from FY 2024-25).
+LTCG_EXEMPTION_INR: Decimal = Decimal("125000")
+
+# --------------------------------------------------------------------------- #
 # Currencies
 # --------------------------------------------------------------------------- #
 
