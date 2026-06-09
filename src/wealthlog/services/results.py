@@ -169,6 +169,30 @@ class ConcentrationReport:
 
 
 @dataclass(frozen=True)
+class BenchmarkReturn:
+    """A benchmark's return over a window, from snapshot prices."""
+
+    name: str
+    display_name: str
+    start_date: dt.date
+    end_date: dt.date
+    start_price: Decimal
+    end_price: Decimal
+    total_return_pct: Decimal
+    cagr_pct: Decimal | None  # None for windows under a day
+
+
+@dataclass(frozen=True)
+class BenchmarkComparison:
+    """Portfolio money-weighted return vs benchmark CAGRs over the same window."""
+
+    start_date: dt.date
+    end_date: dt.date
+    portfolio_xirr_pct: Decimal | None
+    benchmarks: list[BenchmarkReturn]
+
+
+@dataclass(frozen=True)
 class GainRow:
     """One FIFO-matched realised gain: a SELL slice against a single buy lot."""
 

@@ -30,6 +30,7 @@ class TestEnums:
             "MF",
             "GOLD_ETF",
             "FD",
+            "BENCHMARK",
         }
 
     def test_transaction_types(self):

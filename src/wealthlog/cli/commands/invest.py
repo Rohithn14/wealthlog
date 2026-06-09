@@ -13,6 +13,7 @@ from wealthlog.cli._db import session_scope
 from wealthlog.cli._render import console, fmt_inr, fmt_ratio_as_pct, make_table
 from wealthlog.constants import AssetType, CompoundingFrequency, TransactionType
 from wealthlog.db.models import Investment
+from wealthlog.services.benchmark import BenchmarkService
 from wealthlog.services.concentration import ConcentrationService
 from wealthlog.services.dividends import DividendService
 from wealthlog.services.portfolio import PortfolioService
@@ -291,6 +292,55 @@ def sip_due(
             table.add_row(str(p.due_date), p.symbol, fmt_inr(p.amount_inr))
         console.print(table)
         console.print(f"[yellow]{len(pending)} instalment(s) pending.[/yellow]")
+
+
+@app.command("benchmark")
+def benchmark(
+    start: Annotated[str, typer.Option("--start", help="Window start (YYYY-MM-DD)")],
+    end: Annotated[str | None, typer.Option("--end", help="Window end (YYYY-MM-DD)")] = None,
+) -> None:
+    """Compare portfolio XIRR against standard benchmark CAGRs over a window."""
+    with session_scope() as session:
+        result = BenchmarkService(session).compare(
+            _parse_date(start), dt.date.fromisoformat(end) if end else dt.date.today()
+        )
+        xirr = (
+            f"{result.portfolio_xirr_pct:.2f}%"
+            if result.portfolio_xirr_pct is not None else "—"
+        )
+        console.print(f"Portfolio XIRR ({result.start_date} → {result.end_date}): {xirr}")
+        if not result.benchmarks:
+            console.print(
+                "[dim]No benchmark snapshots in range. Record prices with "
+                "'invest benchmark-price' or refresh after seeding.[/dim]"
+            )
+            return
+        table = make_table("Benchmarks", ["Index", "From", "To", "Total", "CAGR"])
+        for b in result.benchmarks:
+            cagr = f"{b.cagr_pct:.2f}%" if b.cagr_pct is not None else "—"
+            table.add_row(
+                b.display_name, str(b.start_date), str(b.end_date),
+                f"{b.total_return_pct:.2f}%", cagr,
+            )
+        console.print(table)
+
+
+@app.command("benchmark-price")
+def benchmark_price(
+    name: Annotated[str, typer.Argument(help="Benchmark name, e.g. NIFTY50")],
+    price: Annotated[str, typer.Argument(help="Index level / price in INR")],
+    date: Annotated[str | None, typer.Option("--date", "-d", help="YYYY-MM-DD")] = None,
+) -> None:
+    """Record a benchmark price snapshot (for historical comparison)."""
+    with session_scope() as session:
+        try:
+            snap = BenchmarkService(session).record_price(name, _parse_date(date), price)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        console.print(
+            f"[green]Recorded {name.upper()} = {snap.price_inr} on {snap.date}.[/green]"
+        )
 
 
 @app.command("tax-report")

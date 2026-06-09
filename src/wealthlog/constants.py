@@ -21,6 +21,16 @@ class AssetType(StrEnum):
     MF = "MF"  # Indian mutual fund
     GOLD_ETF = "GOLD_ETF"  # NSE-listed gold ETF
     FD = "FD"  # Fixed deposit / debt instrument (no live price)
+    BENCHMARK = "BENCHMARK"  # market index pseudo-asset (no holdings; B1 comparison)
+
+
+#: Standard benchmark indices: name -> (display, yfinance symbol, currency).
+BENCHMARKS: dict[str, tuple[str, str, str]] = {
+    "NIFTY50": ("Nifty 50", "^NSEI", "INR"),
+    "SENSEX": ("BSE Sensex", "^BSESN", "INR"),
+    "SP500": ("S&P 500", "^GSPC", "USD"),
+    "QQQM": ("Invesco QQQ (Nasdaq-100)", "QQQM", "USD"),
+}
 
 
 class TransactionType(StrEnum):
