@@ -107,7 +107,7 @@ BSE_SUFFIX: str = ".BO"
 # --------------------------------------------------------------------------- #
 
 MFAPI_BASE_URL: str = "https://api.mfapi.in/mf"
-FRANKFURTER_BASE_URL: str = "https://api.frankfurter.app"
+FRANKFURTER_BASE_URL: str = "https://api.frankfurter.dev/v1"
 
 # ISO date format used for all stored dates (YYYY-MM-DD), never unix timestamps.
 ISO_DATE_FORMAT: str = "%Y-%m-%d"

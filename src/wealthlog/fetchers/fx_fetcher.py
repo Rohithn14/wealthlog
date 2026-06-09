@@ -45,7 +45,9 @@ class FrankfurterFetcher:
         url = f"{self._base_url}/latest"
         params = {"from": base, "to": quote}
         try:
-            client = self._client or httpx.Client(timeout=get_config().http_timeout_seconds)
+            client = self._client or httpx.Client(
+                timeout=get_config().http_timeout_seconds, follow_redirects=True
+            )
             close = self._client is None
             try:
                 response = client.get(url, params=params)
