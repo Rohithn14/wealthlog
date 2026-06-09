@@ -1,5 +1,13 @@
 # wealthlog — Dev Plan
 
+> **Status (2026-06-09):** Bugs #4, #5, #7, #9-gap, #10, #11 fixed; Milestone A (A1–A4) implemented — `migrations/versions/32511e50be85_*`, `services/{income,recurring,sip}.py`, market-mode `networth history`.
+>
+> **Milestone B — DONE.** B1 benchmark (`services/benchmark.py`, `invest benchmark`), B2 FIFO capital-gains tax (`services/tax.py`, `invest tax-report`), B3 broker import (`services/importer.py`, `wealthlog-cli import`), B4 concentration (`services/concentration.py` + `investments.sector` migration `4a58bfdfca0b`), B5 dividends (`services/dividends.py`, `invest dividends`).
+>
+> **Milestone C — partial.** C3 alerts complete (`services/alerts.py`, tables migration `ac8711fd3f88`, `wealthlog-cli alert`, `wealthlog-alerts` watcher). C1 sidecar/IPC contract complete (`wealthlog.sidecar`, `wealthlog-sidecar`, `docs/DESKTOP.md`); the Tauri/React frontend (C1 phases 2–4) and C2 Textual-widget enhancements remain deferred — they can't be built/tested headless (see `docs/DESKTOP.md`).
+>
+> Remaining LOW bugs (#2, #6, #8, #13–#18) and Task-2 items (LiabilityService, CHECK constraints, PriceCache pruning, `--json/--csv` flags) are still open.
+
 ## Bug Report (Task 1)
 
 Legend: severity CRITICAL / HIGH / MEDIUM / LOW. "NOT A BUG" entries are areas from the audit brief that checked out fine, kept for the record.
