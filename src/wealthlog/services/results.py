@@ -90,8 +90,37 @@ class NetWorth:
 
 @dataclass(frozen=True)
 class NetWorthPoint:
-    """A single point in a historical net-worth (cost-basis) series."""
+    """A single point in a historical net-worth series.
+
+    ``invested_inr`` is always the cost-basis value. ``market_value_inr`` is filled
+    in market mode; ``is_market_value`` is True when at least one component of the
+    point was valued from a price snapshot (others fall back to cost).
+    """
 
     year: int
     month: int
     invested_inr: Decimal
+    market_value_inr: Decimal | None = None
+    is_market_value: bool = False
+
+
+@dataclass(frozen=True)
+class CashflowSummary:
+    """Income minus expenses for a single month (INR)."""
+
+    year: int
+    month: int
+    income_inr: Decimal
+    expenses_inr: Decimal
+    net_inr: Decimal
+
+
+@dataclass(frozen=True)
+class PendingSIP:
+    """A SIP instalment that is due but has no recorded transaction for its month."""
+
+    schedule_id: int
+    investment_id: int
+    symbol: str
+    due_date: dt.date
+    amount_inr: Decimal

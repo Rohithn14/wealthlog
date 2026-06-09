@@ -127,3 +127,49 @@ class TestYFinanceFetcher:
         monkeypatch.setattr(f, "_raw_quote", boom)
         with pytest.raises(FetchError):
             f.get_price("X")
+
+    def test_nan_price_raises_fetch_error(self, monkeypatch):
+        # Bug #7b: yfinance can return NaN; it must be rejected before Decimal
+        # conversion (Decimal("NaN") <= 0 raises InvalidOperation, not FetchError).
+        f = YFinanceFetcher()
+        monkeypatch.setattr(f, "_raw_quote", lambda s: (float("nan"), "INR"))
+        with pytest.raises(FetchError):
+            f.get_price("BROKEN.NS")
+
+    def test_inf_price_raises_fetch_error(self, monkeypatch):
+        f = YFinanceFetcher()
+        monkeypatch.setattr(f, "_raw_quote", lambda s: (float("inf"), "INR"))
+        with pytest.raises(FetchError):
+            f.get_price("BROKEN.NS")
+
+    def test_attribute_only_fast_info(self, monkeypatch):
+        # Bug #7a: attribute-style fast_info uses snake_case `last_price`.
+        import yfinance as yf
+
+        class AttrFastInfo:  # attribute access only, no .get
+            last_price = 1234.5
+            currency = "INR"
+
+        class FakeTicker:
+            def __init__(self, symbol):
+                self.fast_info = AttrFastInfo()
+
+        monkeypatch.setattr(yf, "Ticker", FakeTicker)
+        quote = YFinanceFetcher().get_price("INFY.NS")
+        assert quote.price == Decimal("1234.5000")
+        assert quote.currency == "INR"
+
+    def test_dict_style_camelcase_fast_info(self, monkeypatch):
+        # Bug #7a: dict-style fast_info exposes camelCase `lastPrice`, not snake_case.
+        import yfinance as yf
+
+        fast_info = {"lastPrice": 999.0, "currency": "USD"}
+
+        class FakeTicker:
+            def __init__(self, symbol):
+                self.fast_info = fast_info
+
+        monkeypatch.setattr(yf, "Ticker", FakeTicker)
+        quote = YFinanceFetcher().get_price("AAPL")
+        assert quote.price == Decimal("999.0000")
+        assert quote.currency == "USD"

@@ -9,7 +9,7 @@ import pytest
 from sqlmodel import select
 
 from wealthlog.constants import AssetType, TransactionType
-from wealthlog.db.models import FxRate, PriceCache
+from wealthlog.db.models import FxRate, PriceCache, PriceSnapshot
 from wealthlog.fetchers.base import FetchError, FxQuote, NavQuote, PriceQuote
 from wealthlog.services.fetcher import FetcherService
 from wealthlog.services.portfolio import PortfolioService
@@ -203,3 +203,54 @@ class TestNavAndManual:
         holding = portfolio.get_holdings()[0]
         assert holding.market_value_inr == Decimal("15000.00")
         assert holding.price_is_stale is False
+
+
+class TestPriceSnapshots:
+    """A3: every stored price also upserts one PriceSnapshot per investment per day."""
+
+    def _snaps(self, session, investment_id):
+        return list(
+            session.exec(
+                select(PriceSnapshot).where(PriceSnapshot.investment_id == investment_id)
+            ).all()
+        )
+
+    def test_refresh_creates_snapshot(self, db_session, portfolio):
+        inv = portfolio.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        svc = FetcherService(
+            db_session, price_fetcher=FakePriceFetcher({"INFY.NS": ("1500", "INR")})
+        )
+        svc.refresh_prices()
+        snaps = self._snaps(db_session, inv.id)
+        assert len(snaps) == 1
+        assert snaps[0].date == dt.date.today()
+        assert snaps[0].price_inr == Decimal("1500.0000")
+
+    def test_us_stock_snapshot_in_inr(self, db_session, portfolio):
+        inv = portfolio.add_investment("AAPL", "Apple", AssetType.STOCK_US, currency_native="USD")
+        svc = FetcherService(
+            db_session,
+            price_fetcher=FakePriceFetcher({"AAPL": ("190", "USD")}),
+            fx_fetcher=FakeFxFetcher("83"),
+        )
+        svc.refresh_prices()
+        snaps = self._snaps(db_session, inv.id)
+        assert len(snaps) == 1
+        assert snaps[0].price_inr == Decimal("15770.0000")  # 190 * 83
+
+    def test_same_day_upsert_no_duplicate(self, db_session, portfolio):
+        inv = portfolio.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        svc = FetcherService(
+            db_session, price_fetcher=FakePriceFetcher({"INFY.NS": ("1500", "INR")})
+        )
+        svc.refresh_prices()
+        svc.refresh_prices(force=True)  # second store same day
+        snaps = self._snaps(db_session, inv.id)
+        assert len(snaps) == 1  # upserted, not appended
+
+    def test_manual_price_creates_snapshot(self, db_session, portfolio):
+        inv = portfolio.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        FetcherService(db_session).set_manual_price(inv.id, "1234.56")
+        snaps = self._snaps(db_session, inv.id)
+        assert len(snaps) == 1
+        assert snaps[0].price_inr == Decimal("1234.5600")

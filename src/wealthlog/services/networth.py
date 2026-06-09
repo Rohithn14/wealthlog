@@ -15,7 +15,8 @@ from decimal import Decimal
 from sqlmodel import Session, select
 
 from wealthlog.constants import INFLOW_TRANSACTION_TYPES, AssetType, TransactionType
-from wealthlog.db.models import FdDetails, Investment, Transaction
+from wealthlog.db.models import FdDetails, Investment, PriceSnapshot, Transaction
+from wealthlog.finance.fd import calculate_fd_value
 from wealthlog.logging_conf import get_logger
 from wealthlog.money import to_money
 from wealthlog.services.portfolio import PortfolioService
@@ -76,34 +77,44 @@ class NetWorthService:
         )
 
     def historical_net_worth(
-        self, start: dt.date, end: dt.date
+        self, start: dt.date, end: dt.date, mode: str = "cost"
     ) -> list[NetWorthPoint]:
-        """Return cumulative net-invested capital at each month-end in a range.
+        """Return a month-end net-worth series over a range.
 
-        This is a cost-basis proxy for net worth over time (market history is not
-        stored in v1). FD principal counts from its start date; investment buys add
-        and sells subtract their INR amounts.
+        In ``"cost"`` mode each point is cumulative net-invested capital: FD
+        principal counts from its start date; buys add their INR amounts, and sells
+        subtract the average cost of the units sold (not the sale proceeds, which
+        would let realised profits push the series negative).
+
+        In ``"market"`` mode each point additionally carries ``market_value_inr``:
+        units held at month-end valued at the latest :class:`PriceSnapshot` on or
+        before that date (FDs valued analytically). Holdings without a snapshot fall
+        back to their cost; ``is_market_value`` is True when at least one snapshot
+        was used.
 
         Args:
             start: Range start (inclusive month).
             end: Range end (inclusive month).
+            mode: ``"cost"`` (default) or ``"market"``.
 
         Returns:
             One :class:`NetWorthPoint` per month from ``start`` to ``end``.
 
         Raises:
-            ValueError: If ``end`` precedes ``start``.
+            ValueError: If ``end`` precedes ``start`` or ``mode`` is unknown.
         """
         if end < start:
             raise ValueError("end must not precede start")
+        if mode not in ("cost", "market"):
+            raise ValueError("mode must be 'cost' or 'market'")
 
-        # Gather dated capital movements.
-        movements: list[tuple[dt.date, Decimal]] = []
+        by_investment: dict[int, list[Transaction]] = defaultdict(list)
         for t in self.session.exec(select(Transaction)).all():
-            if t.type in INFLOW_TRANSACTION_TYPES:
-                movements.append((t.date, t.amount_inr))
-            elif t.type == TransactionType.SELL:
-                movements.append((t.date, -t.amount_inr))
+            by_investment[t.investment_id].append(t)
+        for txns in by_investment.values():
+            txns.sort(key=lambda t: (t.date, t.id))
+
+        fd_rows: list[FdDetails] = []
         for inv in self.session.exec(
             select(Investment).where(Investment.asset_type == AssetType.FD)
         ).all():
@@ -111,21 +122,91 @@ class NetWorthService:
                 select(FdDetails).where(FdDetails.investment_id == inv.id)
             ).first()
             if details is not None:
-                movements.append((details.start_date, details.principal))
+                fd_rows.append(details)
+
+        snapshots: dict[int, list[PriceSnapshot]] = defaultdict(list)
+        if mode == "market":
+            for snap in self.session.exec(
+                select(PriceSnapshot).order_by(PriceSnapshot.date)
+            ).all():
+                snapshots[snap.investment_id].append(snap)
 
         points: list[NetWorthPoint] = []
         year, month = start.year, start.month
         while (year, month) <= (end.year, end.month):
             cutoff = _month_end(year, month)
-            invested = to_money(
-                sum((amt for d, amt in movements if d <= cutoff), _ZERO)
+
+            invested = _ZERO
+            market = _ZERO
+            used_snapshot = False
+            for inv_id, txns in by_investment.items():
+                held_units, held_cost = _position_at(txns, cutoff)
+                invested += held_cost
+                if mode == "market" and held_units > 0:
+                    snap_price = _latest_snapshot_price(snapshots.get(inv_id, []), cutoff)
+                    if snap_price is not None:
+                        market += held_units * snap_price
+                        used_snapshot = True
+                    else:
+                        market += held_cost
+            for details in fd_rows:
+                if details.start_date <= cutoff:
+                    invested += details.principal
+                    if mode == "market":
+                        market += calculate_fd_value(
+                            details.principal,
+                            details.interest_rate,
+                            details.start_date,
+                            cutoff,
+                            compounding=details.compounding,
+                            maturity_date=details.maturity_date,
+                        )
+
+            points.append(
+                NetWorthPoint(
+                    year=year,
+                    month=month,
+                    invested_inr=to_money(invested),
+                    market_value_inr=to_money(market) if mode == "market" else None,
+                    is_market_value=used_snapshot,
+                )
             )
-            points.append(NetWorthPoint(year=year, month=month, invested_inr=invested))
             month += 1
             if month > 12:
                 month = 1
                 year += 1
         return points
+
+
+def _position_at(txns: list[Transaction], cutoff: dt.date) -> tuple[Decimal, Decimal]:
+    """Fold date-sorted transactions up to ``cutoff`` into (units, cost) held.
+
+    SELLs release the average cost of the sold units; oversells (legacy data)
+    release no further cost.
+    """
+    held_units = Decimal(0)
+    held_cost = Decimal(0)
+    for t in txns:
+        if t.date > cutoff:
+            break
+        if t.type in INFLOW_TRANSACTION_TYPES:
+            held_units += t.units
+            held_cost += t.amount_inr
+        elif t.type == TransactionType.SELL and held_units > 0:
+            sold = min(t.units, held_units)
+            held_cost -= held_cost * sold / held_units
+            held_units -= sold
+    return held_units, held_cost
+
+
+def _latest_snapshot_price(snaps: list[PriceSnapshot], cutoff: dt.date) -> Decimal | None:
+    """Latest snapshot price on or before ``cutoff`` (snaps are date-sorted)."""
+    price: Decimal | None = None
+    for snap in snaps:
+        if snap.date > cutoff:
+            break
+        price = snap.price_inr
+    return price
 
 
 def _month_end(year: int, month: int) -> dt.date:

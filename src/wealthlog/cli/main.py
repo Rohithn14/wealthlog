@@ -10,7 +10,7 @@ from __future__ import annotations
 import typer
 
 from wealthlog import __version__
-from wealthlog.cli.commands import budget, category, expense, export, invest, networth
+from wealthlog.cli.commands import budget, category, expense, export, income, invest, networth
 
 app = typer.Typer(
     name="wealthlog",
@@ -20,6 +20,7 @@ app = typer.Typer(
 )
 
 app.add_typer(expense.app, name="expense")
+app.add_typer(income.app, name="income")
 app.add_typer(category.app, name="category")
 app.add_typer(budget.app, name="budget")
 app.add_typer(invest.app, name="invest")

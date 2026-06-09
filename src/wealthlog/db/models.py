@@ -22,6 +22,7 @@ from wealthlog.constants import (
     AssetType,
     CategoryType,
     CompoundingFrequency,
+    RecurrenceFrequency,
     TransactionType,
 )
 from wealthlog.db.types import DecimalText
@@ -65,6 +66,36 @@ class Expense(SQLModel, table=True):
     description: str | None = None
     tags: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     account_id: int | None = Field(default=None, foreign_key="accounts.id", index=True)
+
+
+class Income(SQLModel, table=True):
+    """A single dated income entry in INR (salary, dividend payout, interest…)."""
+
+    __tablename__ = "incomes"
+
+    id: int | None = Field(default=None, primary_key=True)
+    date: dt.date = Field(index=True)
+    amount_inr: Decimal = Field(sa_column=Column(DecimalText(MONEY_QUANTET), nullable=False))
+    category_id: int | None = Field(default=None, foreign_key="categories.id", index=True)
+    source: str | None = None  # e.g. employer, broker, bank
+    description: str | None = None
+    account_id: int | None = Field(default=None, foreign_key="accounts.id", index=True)
+
+
+class RecurringExpense(SQLModel, table=True):
+    """A rule that materialises an :class:`Expense` on a fixed cadence."""
+
+    __tablename__ = "recurring_expenses"
+
+    id: int | None = Field(default=None, primary_key=True)
+    amount_inr: Decimal = Field(sa_column=Column(DecimalText(MONEY_QUANTET), nullable=False))
+    category_id: int | None = Field(default=None, foreign_key="categories.id", index=True)
+    frequency: RecurrenceFrequency = Field(default=RecurrenceFrequency.MONTHLY)
+    day_of_month: int | None = None  # MONTHLY only; clamped to month length
+    description: str | None = None
+    active: bool = Field(default=True)
+    #: Watermark: expenses up to and including this date have been generated.
+    last_generated: dt.date | None = None
 
 
 class Budget(SQLModel, table=True):
@@ -136,6 +167,35 @@ class PriceCache(SQLModel, table=True):
         default=None, sa_column=Column(DecimalText(FX_QUANTET), nullable=True)
     )
     fetched_at: dt.datetime = Field(index=True)
+
+
+class PriceSnapshot(SQLModel, table=True):
+    """One closing INR price per investment per day, for historical valuation."""
+
+    __tablename__ = "price_snapshots"
+    __table_args__ = (
+        UniqueConstraint("investment_id", "date", name="uq_price_snapshot_investment_date"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    investment_id: int = Field(foreign_key="investments.id", index=True)
+    date: dt.date = Field(index=True)
+    price_inr: Decimal = Field(sa_column=Column(DecimalText(PRICE_QUANTET), nullable=False))
+    source: str = "fetch"  # "yfinance" | "mfapi" | "manual"
+
+
+class SIPSchedule(SQLModel, table=True):
+    """An expected monthly SIP instalment against an investment."""
+
+    __tablename__ = "sip_schedules"
+
+    id: int | None = Field(default=None, primary_key=True)
+    investment_id: int = Field(foreign_key="investments.id", index=True)
+    amount_inr: Decimal = Field(sa_column=Column(DecimalText(MONEY_QUANTET), nullable=False))
+    day_of_month: int = Field(ge=1, le=31)
+    start_date: dt.date
+    end_date: dt.date | None = None
+    active: bool = Field(default=True)
 
 
 class FxRate(SQLModel, table=True):

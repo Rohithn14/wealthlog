@@ -14,8 +14,11 @@ from wealthlog.cli._render import console, fmt_inr, fmt_ratio_as_pct, make_table
 from wealthlog.constants import AssetType, CompoundingFrequency, TransactionType
 from wealthlog.db.models import Investment
 from wealthlog.services.portfolio import PortfolioService
+from wealthlog.services.sip import SIPService
 
 app = typer.Typer(help="Track investments, holdings, P&L, and XIRR.", no_args_is_help=True)
+sip_schedule_app = typer.Typer(help="Manage SIP schedules.", no_args_is_help=True)
+app.add_typer(sip_schedule_app, name="sip-schedule")
 
 
 def _parse_date(value: str | None) -> dt.date:
@@ -204,6 +207,87 @@ def set_price(
         console.print(
             f"[green]Set manual price for {symbol}:[/green] {fmt_inr(Decimal(price_inr))}"
         )
+
+
+@sip_schedule_app.command("add")
+def add_sip_schedule(
+    symbol: Annotated[str, typer.Argument(help="Investment symbol/scheme code")],
+    amount: Annotated[str, typer.Argument(help="Monthly instalment in INR")],
+    day: Annotated[int, typer.Argument(help="Day of month (1-31)")],
+    start: Annotated[str, typer.Option("--start", help="First instalment month (YYYY-MM-DD)")],
+    end: Annotated[
+        str | None, typer.Option("--end", help="Last instalment month (YYYY-MM-DD)")
+    ] = None,
+) -> None:
+    """Create a monthly SIP schedule for an investment."""
+    with session_scope() as session:
+        inv = _resolve_investment(session, symbol)
+        try:
+            schedule = SIPService(session).add_schedule(
+                inv.id, amount, day, _parse_date(start),
+                end_date=dt.date.fromisoformat(end) if end else None,
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        console.print(
+            f"[green]Added SIP schedule #{schedule.id}:[/green] "
+            f"{fmt_inr(schedule.amount_inr)} {symbol} on day {schedule.day_of_month}"
+        )
+
+
+@sip_schedule_app.command("list")
+def list_sip_schedules(
+    all_schedules: Annotated[bool, typer.Option("--all", help="Include inactive")] = False,
+) -> None:
+    """List SIP schedules (active only by default)."""
+    with session_scope() as session:
+        schedules = SIPService(session).list_schedules(include_inactive=all_schedules)
+        table = make_table(
+            "SIP schedules", ["#", "Symbol", "Amount", "Day", "Start", "End", "Active"]
+        )
+        for s in schedules:
+            inv = session.get(Investment, s.investment_id)
+            table.add_row(
+                str(s.id), inv.symbol if inv else str(s.investment_id),
+                fmt_inr(s.amount_inr), str(s.day_of_month), str(s.start_date),
+                str(s.end_date or "—"), "yes" if s.active else "no",
+            )
+        console.print(table)
+
+
+@sip_schedule_app.command("deactivate")
+def deactivate_sip_schedule(
+    schedule_id: Annotated[int, typer.Argument(help="Schedule id")],
+) -> None:
+    """Deactivate a SIP schedule."""
+    with session_scope() as session:
+        if SIPService(session).deactivate(schedule_id):
+            console.print(f"[green]Deactivated SIP schedule #{schedule_id}.[/green]")
+        else:
+            console.print(f"[red]No SIP schedule #{schedule_id}.[/red]")
+            raise typer.Exit(code=1)
+
+
+@app.command("sip-due")
+def sip_due(
+    as_of: Annotated[
+        str | None, typer.Option("--as-of", help="Check due as of (YYYY-MM-DD)")
+    ] = None,
+) -> None:
+    """List SIP instalments that are due but have no recorded transaction."""
+    with session_scope() as session:
+        pending = SIPService(session).get_pending_sips(
+            as_of=dt.date.fromisoformat(as_of) if as_of else None
+        )
+        if not pending:
+            console.print("[green]No pending SIP instalments.[/green]")
+            return
+        table = make_table("Pending SIPs", ["Due", "Symbol", "Amount"])
+        for p in pending:
+            table.add_row(str(p.due_date), p.symbol, fmt_inr(p.amount_inr))
+        console.print(table)
+        console.print(f"[yellow]{len(pending)} instalment(s) pending.[/yellow]")
 
 
 @app.command("xirr")

@@ -39,6 +39,14 @@ class CategoryType(StrEnum):
     INCOME = "INCOME"
 
 
+class RecurrenceFrequency(StrEnum):
+    """Cadence for recurring expenses and SIP schedules."""
+
+    DAILY = "DAILY"
+    WEEKLY = "WEEKLY"
+    MONTHLY = "MONTHLY"
+
+
 class CompoundingFrequency(StrEnum):
     """Interest compounding frequency for fixed deposits."""
 
