@@ -24,4 +24,4 @@ jobs:
         run: uv run ruff check .
 
       - name: Run tests
-        run: uv run pytest --cov=wealthlog --cov-report=term-missing
+        run: uv run pytest --cov --cov-report=term-missing --cov-fail-under=80
