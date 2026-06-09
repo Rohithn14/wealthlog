@@ -21,11 +21,12 @@ def configure_logging(level: int | str | None = None) -> None:
 
     Args:
         level: Logging level (int or name). Defaults to the ``WEALTHLOG_LOG_LEVEL``
-            environment variable, or ``INFO`` if unset. Idempotent — repeated calls
-            after the first are no-ops unless a new explicit level is passed.
+            environment variable, or ``WARNING`` if unset (keeps the CLI quiet; set
+            ``WEALTHLOG_LOG_LEVEL=INFO`` for verbose output). Idempotent — repeated
+            calls after the first are no-ops unless a new explicit level is passed.
     """
     global _configured
-    resolved = level if level is not None else os.environ.get("WEALTHLOG_LOG_LEVEL", "INFO")
+    resolved = level if level is not None else os.environ.get("WEALTHLOG_LOG_LEVEL", "WARNING")
     if _configured and level is None:
         return
     logging.basicConfig(level=resolved, format=_LOG_FORMAT, datefmt=_DATE_FORMAT)
