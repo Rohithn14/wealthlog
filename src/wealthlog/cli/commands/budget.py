@@ -8,7 +8,7 @@ import typer
 from sqlmodel import select
 
 from wealthlog.cli._db import session_scope
-from wealthlog.cli._render import console, fmt_inr, make_table
+from wealthlog.cli._render import OutputFormat, console, emit, fmt_inr, make_table
 from wealthlog.db.models import Category
 from wealthlog.services.budget import BudgetService
 
@@ -45,11 +45,15 @@ def set_budget(
 def status(
     year: Annotated[int, typer.Argument()],
     month: Annotated[int, typer.Argument()],
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
 ) -> None:
     """Show budget vs spending for a month."""
     with session_scope() as session:
         svc = BudgetService(session)
         rows = svc.get_budget_status(year, month)
+        if fmt is not OutputFormat.table:
+            emit(rows, fmt)
+            return
         table = make_table(
             f"Budget status {year}-{month:02d}",
             ["Category", "Limit", "Spent", "Remaining", "Used", "Status"],

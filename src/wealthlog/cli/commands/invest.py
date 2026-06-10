@@ -10,7 +10,7 @@ import typer
 from sqlmodel import select
 
 from wealthlog.cli._db import session_scope
-from wealthlog.cli._render import console, fmt_inr, fmt_ratio_as_pct, make_table
+from wealthlog.cli._render import OutputFormat, console, emit, fmt_inr, fmt_ratio_as_pct, make_table
 from wealthlog.constants import AssetType, CompoundingFrequency, TransactionType
 from wealthlog.db.models import Investment
 from wealthlog.services.benchmark import BenchmarkService
@@ -141,11 +141,16 @@ def sip(
 
 
 @app.command("holdings")
-def holdings() -> None:
+def holdings(
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
+) -> None:
     """Show current holdings with P&L."""
     with session_scope() as session:
         svc = PortfolioService(session)
         rows = svc.get_holdings()
+        if fmt is not OutputFormat.table:
+            emit(rows, fmt)
+            return
         table = make_table(
             "Holdings",
             ["Symbol", "Type", "Units", "Invested", "Value", "P&L", "P&L %", "Price"],
@@ -166,12 +171,16 @@ def holdings() -> None:
 @app.command("pnl")
 def pnl(
     symbol: Annotated[str | None, typer.Option("--symbol", "-s")] = None,
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
 ) -> None:
     """Show portfolio (or single-investment) P&L."""
     with session_scope() as session:
         svc = PortfolioService(session)
         inv_id = _resolve_investment(session, symbol).id if symbol else None
         result = svc.get_pnl(investment_id=inv_id)
+        if fmt is not OutputFormat.table:
+            emit(result, fmt)
+            return
         console.print(f"Invested: {fmt_inr(result.invested_inr)}")
         console.print(f"Value:    {fmt_inr(result.market_value_inr)}")
         color = "green" if result.pnl_abs_inr >= 0 else "red"
@@ -458,6 +467,7 @@ def dividends(
 @app.command("xirr")
 def xirr(
     symbol: Annotated[str | None, typer.Option("--symbol", "-s")] = None,
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
 ) -> None:
     """Show XIRR for the portfolio or a single investment."""
     with session_scope() as session:
@@ -465,6 +475,9 @@ def xirr(
         inv_id = _resolve_investment(session, symbol).id if symbol else None
         rate = svc.calculate_xirr(investment_id=inv_id)
         label = symbol or "Portfolio"
+        if fmt is not OutputFormat.table:
+            emit({"label": label, "xirr": rate}, fmt)
+            return
         if rate is None:
             console.print(
                 f"{label} XIRR: [dim]undefined (need at least one realised/valued flow)[/dim]"

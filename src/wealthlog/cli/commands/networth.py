@@ -8,7 +8,7 @@ from typing import Annotated
 import typer
 
 from wealthlog.cli._db import session_scope
-from wealthlog.cli._render import console, fmt_inr, make_table
+from wealthlog.cli._render import OutputFormat, console, emit, fmt_inr, make_table
 from wealthlog.services.networth import NetWorthService
 
 app = typer.Typer(help="Net-worth dashboard.", no_args_is_help=True)
@@ -17,11 +17,15 @@ app = typer.Typer(help="Net-worth dashboard.", no_args_is_help=True)
 @app.command("show")
 def show(
     as_of: Annotated[str | None, typer.Option("--as-of", help="YYYY-MM-DD")] = None,
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
 ) -> None:
     """Show net worth with asset-class breakdown."""
     with session_scope() as session:
         svc = NetWorthService(session)
         nw = svc.calculate_net_worth(dt.date.fromisoformat(as_of) if as_of else None)
+        if fmt is not OutputFormat.table:
+            emit(nw, fmt)
+            return
         table = make_table(f"Net worth as of {nw.as_of}", ["Asset class", "Value", "Share"])
         for c in nw.by_asset_class:
             table.add_row(c.asset_type.value, fmt_inr(c.market_value_inr), f"{c.pct_of_total:.1f}%")
@@ -37,6 +41,7 @@ def history(
     mode: Annotated[
         str, typer.Option("--mode", help="cost (net invested) or market (from snapshots)")
     ] = "cost",
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
 ) -> None:
     """Show net worth month-by-month (cost basis, or market value from snapshots)."""
     with session_scope() as session:
@@ -48,6 +53,9 @@ def history(
         except ValueError as exc:
             console.print(f"[red]{exc}[/red]")
             raise typer.Exit(code=1) from None
+        if fmt is not OutputFormat.table:
+            emit(points, fmt)
+            return
         if mode == "market":
             table = make_table("Net worth (month-end)", ["Month", "Invested", "Value", "Source"])
             for p in points:
