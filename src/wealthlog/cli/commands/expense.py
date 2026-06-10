@@ -65,7 +65,10 @@ def list_expenses(
         category_id = None
         if category:
             cat = session.exec(select(Category).where(Category.name == category)).first()
-            category_id = cat.id if cat else -1
+            if cat is None:
+                console.print(f"[red]Unknown category '{category}'. Use 'category list'.[/red]")
+                raise typer.Exit(code=1)
+            category_id = cat.id
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         svc = ExpenseService(session)
         rows = svc.list_expenses(

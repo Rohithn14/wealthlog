@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from sqlmodel import Session, select
 
+from wealthlog.clock import utcnow as _utcnow
 from wealthlog.config import get_config
 from wealthlog.constants import INR, USD, AssetType
 from wealthlog.db.models import FxRate, Investment, PriceCache, PriceSnapshot
@@ -187,7 +188,7 @@ class FetcherService:
             price_native=to_price(price_native),
             price_inr=to_price(price_inr),
             fx_rate_used=fx_rate_used,
-            fetched_at=dt.datetime.now(),
+            fetched_at=_utcnow(),
         )
         self.session.add(row)
         self._upsert_snapshot(investment_id, to_price(price_inr), source)
@@ -262,7 +263,7 @@ class FetcherService:
 
     @staticmethod
     def _is_stale(fetched_at: dt.datetime, ttl: dt.timedelta) -> bool:
-        return (dt.datetime.now() - fetched_at) > ttl
+        return (_utcnow() - fetched_at) > ttl
 
     def set_manual_price(
         self, investment_id: int, price_inr: Decimal | int | str
