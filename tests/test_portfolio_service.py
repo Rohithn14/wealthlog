@@ -200,3 +200,69 @@ class TestXirr:
 
     def test_empty_portfolio_none(self, svc):
         assert svc.calculate_xirr() is None
+
+
+class TestValidateTransaction:
+    """Regression tests for `_validate_transaction` (bugs #9-gap, #10, #11)."""
+
+    def test_fd_rejects_transactions(self, svc):
+        fd = svc.add_fd(
+            "SBI FD", "100000", "7", dt.date(2024, 1, 1), dt.date(2025, 1, 1),
+            compounding=CompoundingFrequency.ANNUAL,
+        )
+        with pytest.raises(ValueError, match="FD"):
+            svc.add_transaction(fd.id, dt.date(2024, 6, 1), TransactionType.BUY, "1", "1")
+
+    def test_dividend_with_units_rejected(self, svc):
+        inv = svc.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        with pytest.raises(ValueError, match="DIVIDEND"):
+            svc.add_transaction(inv.id, dt.date(2026, 1, 1), TransactionType.DIVIDEND, "5", "0")
+
+    def test_dividend_with_zero_units_allowed(self, svc):
+        inv = svc.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        svc.add_transaction(inv.id, dt.date(2026, 1, 1), TransactionType.BUY, "10", "1000")
+        txn = svc.add_transaction(
+            inv.id, dt.date(2026, 2, 1), TransactionType.DIVIDEND, "0", "0", amount_inr="500"
+        )
+        assert txn.amount_inr == Decimal("500.00")
+
+    def test_oversell_rejected(self, svc):
+        inv = svc.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        svc.add_transaction(inv.id, dt.date(2026, 1, 1), TransactionType.BUY, "10", "1000")
+        with pytest.raises(ValueError, match="only"):
+            svc.add_transaction(inv.id, dt.date(2026, 3, 1), TransactionType.SELL, "11", "1500")
+
+    def test_sell_up_to_held_allowed(self, svc):
+        inv = svc.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        svc.add_transaction(inv.id, dt.date(2026, 1, 1), TransactionType.BUY, "10", "1000")
+        txn = svc.add_transaction(inv.id, dt.date(2026, 3, 1), TransactionType.SELL, "10", "1500")
+        assert txn.units == Decimal("10.0000")
+
+    def test_non_inr_without_fx_or_amount_rejected(self, svc):
+        inv = svc.add_investment("AAPL", "Apple", AssetType.STOCK_US, currency_native="USD")
+        with pytest.raises(ValueError, match="denominated"):
+            svc.add_transaction(inv.id, dt.date(2026, 1, 1), TransactionType.BUY, "10", "100")
+
+    def test_non_inr_with_fx_allowed(self, svc):
+        inv = svc.add_investment("AAPL", "Apple", AssetType.STOCK_US, currency_native="USD")
+        txn = svc.add_transaction(
+            inv.id, dt.date(2026, 1, 1), TransactionType.BUY, "10", "100", fx_rate_used="83"
+        )
+        assert txn.amount_inr == Decimal("83000.00")
+
+
+class TestMaturedFdXirr:
+    """Bug #5: a matured FD's terminal flow must be dated at maturity, not as_of."""
+
+    def test_xirr_stable_after_maturity(self, svc):
+        # 10% annual FD: 100000 -> 110000 over exactly one year.
+        svc.add_fd(
+            "SBI FD", "100000", "10", dt.date(2024, 1, 1), dt.date(2025, 1, 1),
+            compounding=CompoundingFrequency.ANNUAL,
+        )
+        at_maturity = svc.calculate_xirr(as_of=dt.date(2025, 1, 1))
+        well_after = svc.calculate_xirr(as_of=dt.date(2026, 6, 1))
+        assert at_maturity is not None and well_after is not None
+        # Both should report ~10%; querying long after maturity must not dilute it.
+        assert abs(at_maturity - Decimal("0.10")) < Decimal("0.01")
+        assert abs(well_after - at_maturity) < Decimal("0.001")

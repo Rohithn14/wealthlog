@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from wealthlog.config import get_config
 from wealthlog.constants import INR, USD, AssetType
-from wealthlog.db.models import FxRate, Investment, PriceCache
+from wealthlog.db.models import FxRate, Investment, PriceCache, PriceSnapshot
 from wealthlog.fetchers.base import (
     FetchError,
     FxFetcher,
@@ -180,6 +180,7 @@ class FetcherService:
         price_native: Decimal,
         price_inr: Decimal,
         fx_rate_used: Decimal | None,
+        source: str = "fetch",
     ) -> PriceCache:
         row = PriceCache(
             investment_id=investment_id,
@@ -189,8 +190,29 @@ class FetcherService:
             fetched_at=dt.datetime.now(),
         )
         self.session.add(row)
+        self._upsert_snapshot(investment_id, to_price(price_inr), source)
         self.session.commit()
         return row
+
+    def _upsert_snapshot(self, investment_id: int, price_inr: Decimal, source: str) -> None:
+        """Record today's closing price (one snapshot per investment per day)."""
+        today = dt.date.today()
+        existing = self.session.exec(
+            select(PriceSnapshot).where(
+                PriceSnapshot.investment_id == investment_id,
+                PriceSnapshot.date == today,
+            )
+        ).first()
+        if existing is not None:
+            existing.price_inr = price_inr
+            existing.source = source
+            self.session.add(existing)
+        else:
+            self.session.add(
+                PriceSnapshot(
+                    investment_id=investment_id, date=today, price_inr=price_inr, source=source
+                )
+            )
 
     def refresh_prices(self, force: bool = False) -> RefreshResult:
         """Refresh cached prices for every non-FD investment.

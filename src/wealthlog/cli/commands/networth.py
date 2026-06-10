@@ -34,14 +34,35 @@ def show(
 def history(
     start: Annotated[str, typer.Option("--start", help="YYYY-MM-DD")],
     end: Annotated[str, typer.Option("--end", help="YYYY-MM-DD")],
+    mode: Annotated[
+        str, typer.Option("--mode", help="cost (net invested) or market (from snapshots)")
+    ] = "cost",
 ) -> None:
-    """Show cumulative invested capital month-by-month."""
+    """Show net worth month-by-month (cost basis, or market value from snapshots)."""
     with session_scope() as session:
         svc = NetWorthService(session)
-        points = svc.historical_net_worth(
-            dt.date.fromisoformat(start), dt.date.fromisoformat(end)
-        )
-        table = make_table("Invested capital (month-end)", ["Month", "Invested"])
-        for p in points:
-            table.add_row(f"{p.year}-{p.month:02d}", fmt_inr(p.invested_inr))
-        console.print(table)
+        try:
+            points = svc.historical_net_worth(
+                dt.date.fromisoformat(start), dt.date.fromisoformat(end), mode=mode
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from None
+        if mode == "market":
+            table = make_table("Net worth (month-end)", ["Month", "Invested", "Value", "Source"])
+            for p in points:
+                table.add_row(
+                    f"{p.year}-{p.month:02d}", fmt_inr(p.invested_inr),
+                    fmt_inr(p.market_value_inr),
+                    "snapshots" if p.is_market_value else "cost (no snapshots)",
+                )
+            console.print(table)
+        else:
+            table = make_table("Invested capital (month-end)", ["Month", "Invested"])
+            for p in points:
+                table.add_row(f"{p.year}-{p.month:02d}", fmt_inr(p.invested_inr))
+            console.print(table)
+            console.print(
+                "[dim]Note: cost-basis series (cumulative net invested capital), "
+                "not market value. Use --mode market once price snapshots exist.[/dim]"
+            )

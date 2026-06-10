@@ -8,7 +8,7 @@ must treat :class:`FetchError` as expected and fall back to manual prices.
 from __future__ import annotations
 
 import datetime as dt
-from decimal import Decimal
+import math
 
 from wealthlog.fetchers.base import FetchError, PriceQuote
 from wealthlog.logging_conf import get_logger
@@ -26,9 +26,13 @@ class YFinanceFetcher:
 
         ticker = yf.Ticker(symbol)
         info = ticker.fast_info
-        has_get = hasattr(info, "get")
-        price = info.get("last_price") if has_get else getattr(info, "last_price", None)
-        currency = info.get("currency") if has_get else getattr(info, "currency", None)
+        # fast_info changed shape across yfinance versions: attribute access uses
+        # snake_case, dict-style access uses camelCase keys.
+        price = getattr(info, "last_price", None)
+        currency = getattr(info, "currency", None)
+        if price is None and hasattr(info, "get"):
+            price = info.get("lastPrice")
+            currency = currency or info.get("currency")
         if price is None:
             hist = ticker.history(period="1d")
             if hist.empty:
@@ -55,7 +59,9 @@ class YFinanceFetcher:
         except Exception as exc:  # noqa: BLE001 - yfinance raises many error types
             raise FetchError(f"yfinance request failed for {symbol}: {exc}") from exc
 
-        quote = to_price(str(price))
-        if quote <= Decimal(0):
+        # NaN must be rejected before Decimal conversion: Decimal("NaN") <= 0
+        # raises InvalidOperation instead of comparing.
+        if math.isnan(price) or math.isinf(price) or price <= 0:
             raise FetchError(f"yfinance returned non-positive price for {symbol}")
+        quote = to_price(str(price))
         return PriceQuote(symbol=symbol, price=quote, currency=currency, as_of=dt.datetime.now())

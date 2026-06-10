@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from wealthlog.config import get_config
 from wealthlog.constants import (
     INFLOW_TRANSACTION_TYPES,
+    INR,
     AssetType,
     TransactionType,
 )
@@ -23,7 +24,7 @@ from wealthlog.db.models import FdDetails, Investment, PriceCache, Transaction
 from wealthlog.finance.fd import calculate_fd_value
 from wealthlog.finance.xirr import calculate_xirr
 from wealthlog.logging_conf import get_logger
-from wealthlog.money import to_money, to_price, to_units
+from wealthlog.money import to_fx, to_money, to_price, to_units
 from wealthlog.services.results import Holding, PnL
 
 logger = get_logger(__name__)
@@ -50,6 +51,7 @@ class PortfolioService:
         asset_type: AssetType,
         currency_native: str = "INR",
         exchange: str | None = None,
+        sector: str | None = None,
     ) -> Investment:
         """Create an investment record and return it."""
         inv = Investment(
@@ -58,11 +60,22 @@ class PortfolioService:
             asset_type=asset_type,
             currency_native=currency_native,
             exchange=exchange,
+            sector=sector,
         )
         self.session.add(inv)
         self.session.commit()
         self.session.refresh(inv)
         return inv
+
+    def set_sector(self, investment_id: int, sector: str | None) -> bool:
+        """Set/clear an investment's sector tag; ``True`` if it existed."""
+        inv = self.session.get(Investment, investment_id)
+        if inv is None:
+            return False
+        inv.sector = sector
+        self.session.add(inv)
+        self.session.commit()
+        return True
 
     def add_fd(
         self,
@@ -127,7 +140,10 @@ class PortfolioService:
             The persisted :class:`Transaction`.
 
         Raises:
-            ValueError: If the investment does not exist or units/price are negative.
+            ValueError: If the investment does not exist, units/price are negative,
+                the transaction is invalid for the asset (FDs take no transactions,
+                DIVIDEND must not carry units), a SELL exceeds the held units, or a
+                non-INR asset is transacted without an FX rate or explicit amount.
         """
         inv = self.session.get(Investment, investment_id)
         if inv is None:
@@ -138,7 +154,8 @@ class PortfolioService:
         if u < 0 or ppu < 0:
             raise ValueError("units and price_per_unit must be non-negative")
 
-        fx = Decimal(fx_rate_used) if fx_rate_used is not None else None
+        fx = to_fx(fx_rate_used) if fx_rate_used is not None else None
+        self._validate_transaction(inv, type, u, fx, amount_inr)
         if amount_inr is not None:
             amount = to_money(amount_inr)
         else:
@@ -160,6 +177,50 @@ class PortfolioService:
         self.session.refresh(txn)
         logger.info("Added %s txn for investment %s: %s units @ %s", type, investment_id, u, ppu)
         return txn
+
+    def _held_units(self, investment_id: int) -> Decimal:
+        """Net units currently held (inflows minus sells)."""
+        held = Decimal(0)
+        for t in self.session.exec(
+            select(Transaction).where(Transaction.investment_id == investment_id)
+        ).all():
+            if t.type in INFLOW_TRANSACTION_TYPES:
+                held += t.units
+            elif t.type == TransactionType.SELL:
+                held -= t.units
+        return held
+
+    def _validate_transaction(
+        self,
+        inv: Investment,
+        type: TransactionType,
+        units: Decimal,
+        fx: Decimal | None,
+        amount_inr: Decimal | int | str | None,
+    ) -> None:
+        if inv.asset_type == AssetType.FD:
+            raise ValueError(
+                "FDs are valued analytically and take no transactions; "
+                "edit the FD details instead"
+            )
+        if type == TransactionType.DIVIDEND and units != 0:
+            raise ValueError(
+                "DIVIDEND must not carry units; record a reinvestment as a BUY/SIP"
+            )
+        if type == TransactionType.SELL:
+            held = self._held_units(inv.id)
+            if units > held:
+                raise ValueError(f"Cannot sell {units} units; only {held} held")
+        if (
+            inv.currency_native != INR
+            and fx is None
+            and amount_inr is None
+            and type != TransactionType.DIVIDEND
+        ):
+            raise ValueError(
+                f"{inv.symbol} is {inv.currency_native}-denominated; "
+                "pass fx_rate_used or an explicit amount_inr"
+            )
 
     # ------------------------------------------------------------- price reads
 
@@ -327,15 +388,18 @@ class PortfolioService:
             if details is None:
                 return flows
             flows.append((details.start_date, -to_money(details.principal)))
+            # Accrual stops at maturity, so the terminal flow must be dated there
+            # too — dating a matured value at a later as_of dilutes the rate.
+            terminal_date = min(as_of, details.maturity_date)
             value = calculate_fd_value(
                 details.principal,
                 details.interest_rate,
                 details.start_date,
-                as_of,
+                terminal_date,
                 compounding=details.compounding,
                 maturity_date=details.maturity_date,
             )
-            flows.append((as_of, to_money(value)))
+            flows.append((terminal_date, to_money(value)))
             return flows
 
         txns = self.session.exec(

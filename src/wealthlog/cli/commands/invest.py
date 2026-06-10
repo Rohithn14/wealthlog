@@ -13,9 +13,16 @@ from wealthlog.cli._db import session_scope
 from wealthlog.cli._render import console, fmt_inr, fmt_ratio_as_pct, make_table
 from wealthlog.constants import AssetType, CompoundingFrequency, TransactionType
 from wealthlog.db.models import Investment
+from wealthlog.services.benchmark import BenchmarkService
+from wealthlog.services.concentration import ConcentrationService
+from wealthlog.services.dividends import DividendService
 from wealthlog.services.portfolio import PortfolioService
+from wealthlog.services.sip import SIPService
+from wealthlog.services.tax import TaxService
 
 app = typer.Typer(help="Track investments, holdings, P&L, and XIRR.", no_args_is_help=True)
+sip_schedule_app = typer.Typer(help="Manage SIP schedules.", no_args_is_help=True)
+app.add_typer(sip_schedule_app, name="sip-schedule")
 
 
 def _parse_date(value: str | None) -> dt.date:
@@ -204,6 +211,248 @@ def set_price(
         console.print(
             f"[green]Set manual price for {symbol}:[/green] {fmt_inr(Decimal(price_inr))}"
         )
+
+
+@sip_schedule_app.command("add")
+def add_sip_schedule(
+    symbol: Annotated[str, typer.Argument(help="Investment symbol/scheme code")],
+    amount: Annotated[str, typer.Argument(help="Monthly instalment in INR")],
+    day: Annotated[int, typer.Argument(help="Day of month (1-31)")],
+    start: Annotated[str, typer.Option("--start", help="First instalment month (YYYY-MM-DD)")],
+    end: Annotated[
+        str | None, typer.Option("--end", help="Last instalment month (YYYY-MM-DD)")
+    ] = None,
+) -> None:
+    """Create a monthly SIP schedule for an investment."""
+    with session_scope() as session:
+        inv = _resolve_investment(session, symbol)
+        try:
+            schedule = SIPService(session).add_schedule(
+                inv.id, amount, day, _parse_date(start),
+                end_date=dt.date.fromisoformat(end) if end else None,
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        console.print(
+            f"[green]Added SIP schedule #{schedule.id}:[/green] "
+            f"{fmt_inr(schedule.amount_inr)} {symbol} on day {schedule.day_of_month}"
+        )
+
+
+@sip_schedule_app.command("list")
+def list_sip_schedules(
+    all_schedules: Annotated[bool, typer.Option("--all", help="Include inactive")] = False,
+) -> None:
+    """List SIP schedules (active only by default)."""
+    with session_scope() as session:
+        schedules = SIPService(session).list_schedules(include_inactive=all_schedules)
+        table = make_table(
+            "SIP schedules", ["#", "Symbol", "Amount", "Day", "Start", "End", "Active"]
+        )
+        for s in schedules:
+            inv = session.get(Investment, s.investment_id)
+            table.add_row(
+                str(s.id), inv.symbol if inv else str(s.investment_id),
+                fmt_inr(s.amount_inr), str(s.day_of_month), str(s.start_date),
+                str(s.end_date or "—"), "yes" if s.active else "no",
+            )
+        console.print(table)
+
+
+@sip_schedule_app.command("deactivate")
+def deactivate_sip_schedule(
+    schedule_id: Annotated[int, typer.Argument(help="Schedule id")],
+) -> None:
+    """Deactivate a SIP schedule."""
+    with session_scope() as session:
+        if SIPService(session).deactivate(schedule_id):
+            console.print(f"[green]Deactivated SIP schedule #{schedule_id}.[/green]")
+        else:
+            console.print(f"[red]No SIP schedule #{schedule_id}.[/red]")
+            raise typer.Exit(code=1)
+
+
+@app.command("sip-due")
+def sip_due(
+    as_of: Annotated[
+        str | None, typer.Option("--as-of", help="Check due as of (YYYY-MM-DD)")
+    ] = None,
+) -> None:
+    """List SIP instalments that are due but have no recorded transaction."""
+    with session_scope() as session:
+        pending = SIPService(session).get_pending_sips(
+            as_of=dt.date.fromisoformat(as_of) if as_of else None
+        )
+        if not pending:
+            console.print("[green]No pending SIP instalments.[/green]")
+            return
+        table = make_table("Pending SIPs", ["Due", "Symbol", "Amount"])
+        for p in pending:
+            table.add_row(str(p.due_date), p.symbol, fmt_inr(p.amount_inr))
+        console.print(table)
+        console.print(f"[yellow]{len(pending)} instalment(s) pending.[/yellow]")
+
+
+@app.command("benchmark")
+def benchmark(
+    start: Annotated[str, typer.Option("--start", help="Window start (YYYY-MM-DD)")],
+    end: Annotated[str | None, typer.Option("--end", help="Window end (YYYY-MM-DD)")] = None,
+) -> None:
+    """Compare portfolio XIRR against standard benchmark CAGRs over a window."""
+    with session_scope() as session:
+        result = BenchmarkService(session).compare(
+            _parse_date(start), dt.date.fromisoformat(end) if end else dt.date.today()
+        )
+        xirr = (
+            f"{result.portfolio_xirr_pct:.2f}%"
+            if result.portfolio_xirr_pct is not None else "—"
+        )
+        console.print(f"Portfolio XIRR ({result.start_date} → {result.end_date}): {xirr}")
+        if not result.benchmarks:
+            console.print(
+                "[dim]No benchmark snapshots in range. Record prices with "
+                "'invest benchmark-price' or refresh after seeding.[/dim]"
+            )
+            return
+        table = make_table("Benchmarks", ["Index", "From", "To", "Total", "CAGR"])
+        for b in result.benchmarks:
+            cagr = f"{b.cagr_pct:.2f}%" if b.cagr_pct is not None else "—"
+            table.add_row(
+                b.display_name, str(b.start_date), str(b.end_date),
+                f"{b.total_return_pct:.2f}%", cagr,
+            )
+        console.print(table)
+
+
+@app.command("benchmark-price")
+def benchmark_price(
+    name: Annotated[str, typer.Argument(help="Benchmark name, e.g. NIFTY50")],
+    price: Annotated[str, typer.Argument(help="Index level / price in INR")],
+    date: Annotated[str | None, typer.Option("--date", "-d", help="YYYY-MM-DD")] = None,
+) -> None:
+    """Record a benchmark price snapshot (for historical comparison)."""
+    with session_scope() as session:
+        try:
+            snap = BenchmarkService(session).record_price(name, _parse_date(date), price)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        console.print(
+            f"[green]Recorded {name.upper()} = {snap.price_inr} on {snap.date}.[/green]"
+        )
+
+
+@app.command("tax-report")
+def tax_report(
+    fy: Annotated[str, typer.Option("--fy", help="Financial year, e.g. 2025-26")],
+) -> None:
+    """FIFO capital-gains report for a financial year (informational only)."""
+    with session_scope() as session:
+        try:
+            report = TaxService(session).capital_gains_report(fy)
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        table = make_table(
+            f"Capital gains FY {report.financial_year}",
+            ["Symbol", "Buy", "Sell", "Units", "Cost", "Proceeds", "Gain", "Term"],
+        )
+        for r in report.rows:
+            color = "green" if r.gain_inr >= 0 else "red"
+            table.add_row(
+                r.symbol, str(r.buy_date), str(r.sell_date), f"{r.units:g}",
+                fmt_inr(r.cost_basis_inr), fmt_inr(r.proceeds_inr),
+                f"[{color}]{fmt_inr(r.gain_inr)}[/{color}]",
+                "LTCG" if r.is_long_term else "STCG",
+            )
+        console.print(table)
+        console.print(f"[bold]Short-term gain:[/bold] {fmt_inr(report.short_term_gain_inr)}")
+        console.print(f"[bold]Long-term gain:[/bold]  {fmt_inr(report.long_term_gain_inr)}")
+        console.print(
+            f"[dim]LTCG exemption {fmt_inr(report.ltcg_exemption_inr)} -> "
+            f"taxable LTCG {fmt_inr(report.taxable_ltcg_inr)}[/dim]"
+        )
+        console.print(
+            f"[bold]Est. tax:[/bold] STCG {fmt_inr(report.estimated_stcg_tax_inr)} + "
+            f"LTCG {fmt_inr(report.estimated_ltcg_tax_inr)}"
+        )
+        console.print(
+            "[yellow]Informational only — not tax advice. Post-Jul-2024 equity rates; "
+            "gold/debt and grandfathering excluded. Verify with a CA.[/yellow]"
+        )
+
+
+@app.command("concentration")
+def concentration(
+    top: Annotated[int, typer.Option("--top", help="Number of largest holdings")] = 10,
+    threshold: Annotated[
+        float, typer.Option("--threshold", help="High-concentration weight %")
+    ] = 10.0,
+) -> None:
+    """Show single-name, sector, and asset-class concentration."""
+    with session_scope() as session:
+        report = ConcentrationService(session).concentration_report(
+            top_n=top, threshold_pct=str(threshold)
+        )
+        if report.total_value_inr <= 0:
+            console.print("[dim]No holdings to analyse.[/dim]")
+            return
+        console.print(f"Total portfolio value: {fmt_inr(report.total_value_inr)}")
+        holdings = make_table(
+            f"Top {top} holdings", ["Symbol", "Name", "Value", "Weight"]
+        )
+        for r in report.top_holdings:
+            weight = f"{r.pct_of_total:.2f}%"
+            if r.is_concentrated:
+                weight = f"[red]{weight} ⚠[/red]"
+            holdings.add_row(r.symbol, r.name, fmt_inr(r.market_value_inr), weight)
+        console.print(holdings)
+        for title, rows in (
+            ("By sector", report.by_sector),
+            ("By asset class", report.by_asset_class),
+        ):
+            table = make_table(title, ["Category", "Value", "Weight"])
+            for w in rows:
+                table.add_row(w.label, fmt_inr(w.market_value_inr), f"{w.pct_of_total:.2f}%")
+            console.print(table)
+
+
+@app.command("set-sector")
+def set_sector(
+    symbol: Annotated[str, typer.Argument(help="Investment symbol")],
+    sector: Annotated[str, typer.Argument(help="Sector label, e.g. IT, Banking")],
+) -> None:
+    """Tag an investment with a sector (used by concentration analysis)."""
+    with session_scope() as session:
+        inv = _resolve_investment(session, symbol)
+        PortfolioService(session).set_sector(inv.id, sector)
+        console.print(f"[green]Set sector for {symbol}:[/green] {sector}")
+
+
+@app.command("dividends")
+def dividends(
+    year: Annotated[
+        int | None, typer.Option("--year", "-y", help="Filter to one calendar year")
+    ] = None,
+) -> None:
+    """Show dividends by holding (and yearly totals) with trailing yield."""
+    with session_scope() as session:
+        svc = DividendService(session)
+        rows = svc.total_by_holding(year=year)
+        title = f"Dividends {year}" if year else "Dividends (all time)"
+        table = make_table(title, ["Symbol", "Name", "Total", "TTM Yield"])
+        for r in rows:
+            yld = f"{r.trailing_yield_pct:.2f}%" if r.trailing_yield_pct is not None else "—"
+            table.add_row(r.symbol, r.name, fmt_inr(r.total_inr), yld)
+        console.print(table)
+        if year is None:
+            by_year = svc.total_by_year()
+            if by_year:
+                yt = make_table("By year", ["Year", "Received"])
+                for y, amount in by_year.items():
+                    yt.add_row(str(y), fmt_inr(amount))
+                console.print(yt)
 
 
 @app.command("xirr")

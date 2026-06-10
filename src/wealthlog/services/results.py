@@ -90,8 +90,142 @@ class NetWorth:
 
 @dataclass(frozen=True)
 class NetWorthPoint:
-    """A single point in a historical net-worth (cost-basis) series."""
+    """A single point in a historical net-worth series.
+
+    ``invested_inr`` is always the cost-basis value. ``market_value_inr`` is filled
+    in market mode; ``is_market_value`` is True when at least one component of the
+    point was valued from a price snapshot (others fall back to cost).
+    """
 
     year: int
     month: int
     invested_inr: Decimal
+    market_value_inr: Decimal | None = None
+    is_market_value: bool = False
+
+
+@dataclass(frozen=True)
+class CashflowSummary:
+    """Income minus expenses for a single month (INR)."""
+
+    year: int
+    month: int
+    income_inr: Decimal
+    expenses_inr: Decimal
+    net_inr: Decimal
+
+
+@dataclass(frozen=True)
+class PendingSIP:
+    """A SIP instalment that is due but has no recorded transaction for its month."""
+
+    schedule_id: int
+    investment_id: int
+    symbol: str
+    due_date: dt.date
+    amount_inr: Decimal
+
+
+@dataclass(frozen=True)
+class DividendRow:
+    """Cumulative dividends for a single investment with trailing yield."""
+
+    investment_id: int
+    symbol: str
+    name: str
+    total_inr: Decimal
+    trailing_yield_pct: Decimal | None
+
+
+@dataclass(frozen=True)
+class ConcentrationRow:
+    """A single holding's weight in the portfolio by market value."""
+
+    symbol: str
+    name: str
+    market_value_inr: Decimal
+    pct_of_total: Decimal
+    is_concentrated: bool  # weight exceeds the high-concentration threshold
+
+
+@dataclass(frozen=True)
+class WeightRow:
+    """A category (sector or asset class) weight by market value."""
+
+    label: str
+    market_value_inr: Decimal
+    pct_of_total: Decimal
+
+
+@dataclass(frozen=True)
+class ConcentrationReport:
+    """Portfolio concentration: top holdings plus sector and asset-class weights."""
+
+    total_value_inr: Decimal
+    threshold_pct: Decimal
+    top_holdings: list[ConcentrationRow]
+    by_sector: list[WeightRow]
+    by_asset_class: list[WeightRow]
+
+
+@dataclass(frozen=True)
+class FiredAlert:
+    """An alert rule that matched during evaluation."""
+
+    rule_id: int
+    kind: str
+    message: str
+
+
+@dataclass(frozen=True)
+class BenchmarkReturn:
+    """A benchmark's return over a window, from snapshot prices."""
+
+    name: str
+    display_name: str
+    start_date: dt.date
+    end_date: dt.date
+    start_price: Decimal
+    end_price: Decimal
+    total_return_pct: Decimal
+    cagr_pct: Decimal | None  # None for windows under a day
+
+
+@dataclass(frozen=True)
+class BenchmarkComparison:
+    """Portfolio money-weighted return vs benchmark CAGRs over the same window."""
+
+    start_date: dt.date
+    end_date: dt.date
+    portfolio_xirr_pct: Decimal | None
+    benchmarks: list[BenchmarkReturn]
+
+
+@dataclass(frozen=True)
+class GainRow:
+    """One FIFO-matched realised gain: a SELL slice against a single buy lot."""
+
+    symbol: str
+    asset_type: AssetType
+    buy_date: dt.date
+    sell_date: dt.date
+    units: Decimal
+    cost_basis_inr: Decimal
+    proceeds_inr: Decimal
+    gain_inr: Decimal
+    holding_days: int
+    is_long_term: bool
+
+
+@dataclass(frozen=True)
+class CapitalGainsReport:
+    """Capital-gains summary for one financial year (informational, not advice)."""
+
+    financial_year: str
+    rows: list[GainRow]
+    short_term_gain_inr: Decimal
+    long_term_gain_inr: Decimal
+    ltcg_exemption_inr: Decimal
+    taxable_ltcg_inr: Decimal
+    estimated_stcg_tax_inr: Decimal
+    estimated_ltcg_tax_inr: Decimal

@@ -21,6 +21,16 @@ class AssetType(StrEnum):
     MF = "MF"  # Indian mutual fund
     GOLD_ETF = "GOLD_ETF"  # NSE-listed gold ETF
     FD = "FD"  # Fixed deposit / debt instrument (no live price)
+    BENCHMARK = "BENCHMARK"  # market index pseudo-asset (no holdings; B1 comparison)
+
+
+#: Standard benchmark indices: name -> (display, yfinance symbol, currency).
+BENCHMARKS: dict[str, tuple[str, str, str]] = {
+    "NIFTY50": ("Nifty 50", "^NSEI", "INR"),
+    "SENSEX": ("BSE Sensex", "^BSESN", "INR"),
+    "SP500": ("S&P 500", "^GSPC", "USD"),
+    "QQQM": ("Invesco QQQ (Nasdaq-100)", "QQQM", "USD"),
+}
 
 
 class TransactionType(StrEnum):
@@ -37,6 +47,22 @@ class CategoryType(StrEnum):
 
     EXPENSE = "EXPENSE"
     INCOME = "INCOME"
+
+
+class RecurrenceFrequency(StrEnum):
+    """Cadence for recurring expenses and SIP schedules."""
+
+    DAILY = "DAILY"
+    WEEKLY = "WEEKLY"
+    MONTHLY = "MONTHLY"
+
+
+class AlertKind(StrEnum):
+    """Portfolio alert rule kinds (C3)."""
+
+    PRICE_DROP = "PRICE_DROP"  # holding down >= threshold% vs average cost
+    BUDGET_PCT = "BUDGET_PCT"  # category spend >= threshold% of monthly budget
+    SIP_DUE = "SIP_DUE"  # one or more SIP instalments are pending
 
 
 class CompoundingFrequency(StrEnum):
@@ -67,6 +93,20 @@ INFLOW_TRANSACTION_TYPES: frozenset[TransactionType] = frozenset(
 YFINANCE_ASSET_TYPES: frozenset[AssetType] = frozenset(
     {AssetType.STOCK_IN, AssetType.STOCK_US, AssetType.GOLD_ETF}
 )
+
+# --------------------------------------------------------------------------- #
+# Capital-gains tax (B2) — INFORMATIONAL ONLY, not tax advice. Post-July-2024
+# rules for listed equity / equity MF. Verify with a CA; gold/debt differ.
+# --------------------------------------------------------------------------- #
+
+#: Holding period (days) at/above which equity gains are long-term.
+EQUITY_LONG_TERM_DAYS: int = 365
+#: LTCG rate on listed equity / equity MF (12.5% from 23 Jul 2024).
+LTCG_RATE: Decimal = Decimal("0.125")
+#: STCG rate on listed equity / equity MF (20% from 23 Jul 2024).
+STCG_RATE: Decimal = Decimal("0.20")
+#: Annual LTCG exemption on equity (₹1.25L from FY 2024-25).
+LTCG_EXEMPTION_INR: Decimal = Decimal("125000")
 
 # --------------------------------------------------------------------------- #
 # Currencies
