@@ -485,3 +485,10 @@ def xirr(
         else:
             color = "green" if rate >= 0 else "red"
             console.print(f"{label} XIRR: [{color}]{fmt_ratio_as_pct(rate)}[/{color}]")
+            if symbol:
+                inv = _resolve_investment(session, symbol)
+                if inv.asset_type is AssetType.FD:
+                    console.print(
+                        "[dim]FD XIRR is analytical (from rate/compounding), "
+                        "not market-derived.[/dim]"
+                    )
