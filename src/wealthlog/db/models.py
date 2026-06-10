@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from wealthlog.constants import (
@@ -58,6 +58,8 @@ class Expense(SQLModel, table=True):
     """A single dated expense in INR."""
 
     __tablename__ = "expenses"
+    # Composite serves BudgetService._spent (filters on category_id + date range).
+    __table_args__ = (Index("ix_expenses_category_date", "category_id", "date"),)
 
     id: int | None = Field(default=None, primary_key=True)
     date: dt.date = Field(index=True)
@@ -138,6 +140,8 @@ class Transaction(SQLModel, table=True):
     """
 
     __tablename__ = "transactions"
+    # Serves _market_holding and per-investment date-ranged queries.
+    __table_args__ = (Index("ix_transactions_inv_date", "investment_id", "date"),)
 
     id: int | None = Field(default=None, primary_key=True)
     investment_id: int = Field(foreign_key="investments.id", index=True)
@@ -158,6 +162,9 @@ class PriceCache(SQLModel, table=True):
     """A cached latest price for an investment, in native currency and INR."""
 
     __tablename__ = "prices_cache"
+    # Makes the latest-price lookup (WHERE investment_id ORDER BY fetched_at) an
+    # index scan with no sort step.
+    __table_args__ = (Index("ix_prices_cache_inv_fetched", "investment_id", "fetched_at"),)
 
     id: int | None = Field(default=None, primary_key=True)
     investment_id: int = Field(foreign_key="investments.id", index=True)

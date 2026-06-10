@@ -28,6 +28,9 @@ from wealthlog.money import to_money, to_price
 
 logger = get_logger(__name__)
 
+#: Rows retained per investment/currency-pair in the append-only caches.
+_CACHE_KEEP = 5
+
 
 @dataclass
 class RefreshResult:
@@ -133,7 +136,23 @@ class FetcherService:
         row = FxRate(currency_pair=pair, rate=quote_data.rate, fetched_at=quote_data.as_of)
         self.session.add(row)
         self.session.commit()
+        self._prune_fx_rates(pair)
         return quote_data.rate, quote_data.as_of
+
+    def _prune_fx_rates(self, pair: str) -> None:
+        """Keep only the latest ``_CACHE_KEEP`` cached rates per currency pair."""
+        stale = self.session.exec(
+            select(FxRate.id)
+            .where(FxRate.currency_pair == pair)
+            .order_by(FxRate.fetched_at.desc(), FxRate.id.desc())
+            .offset(_CACHE_KEEP)
+        ).all()
+        if stale:
+            for row in self.session.exec(
+                select(FxRate).where(FxRate.id.in_(stale))
+            ).all():
+                self.session.delete(row)
+            self.session.commit()
 
     # -------------------------------------------------------------------- NAV
 
@@ -193,7 +212,28 @@ class FetcherService:
         self.session.add(row)
         self._upsert_snapshot(investment_id, to_price(price_inr), source)
         self.session.commit()
+        self._prune_price_cache(investment_id)
         return row
+
+    def _prune_price_cache(self, investment_id: int) -> None:
+        """Keep only the latest ``_CACHE_KEEP`` price rows per investment.
+
+        ``prices_cache`` is otherwise append-only; this bounds its growth while
+        retaining a short audit trail. Historical valuation uses ``price_snapshots``,
+        not this cache, so pruning is safe.
+        """
+        stale = self.session.exec(
+            select(PriceCache.id)
+            .where(PriceCache.investment_id == investment_id)
+            .order_by(PriceCache.fetched_at.desc(), PriceCache.id.desc())
+            .offset(_CACHE_KEEP)
+        ).all()
+        if stale:
+            for row in self.session.exec(
+                select(PriceCache).where(PriceCache.id.in_(stale))
+            ).all():
+                self.session.delete(row)
+            self.session.commit()
 
     def _upsert_snapshot(self, investment_id: int, price_inr: Decimal, source: str) -> None:
         """Record today's closing price (one snapshot per investment per day)."""
