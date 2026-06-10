@@ -756,7 +756,7 @@ def _holdings_panel() -> None:
         ui.label("Holdings").classes("text-lg font-semibold")
         ui.button(
             "Refresh prices",
-            on_click=lambda: asyncio.ensure_future(_refresh_prices()),
+            on_click=_refresh_prices,
         ).props("outline size=sm")
         ui.button("Reload", on_click=_holdings_panel.refresh).props("outline size=sm")
 
@@ -1448,6 +1448,11 @@ def _networth_history_view() -> None:
 
     @ui.refreshable
     def history_view() -> None:
+        if not start_in.value:
+            # Initial render (and after clearing): prompt rather than firing a
+            # spurious "Invalid date format" error on every page load.
+            ui.label("Enter a start date and click Show history.").classes("text-gray-500")
+            return
         try:
             start = dt.date.fromisoformat(start_in.value)
             end = dt.date.fromisoformat(end_in.value) if end_in.value else _TODAY()

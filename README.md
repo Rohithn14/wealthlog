@@ -18,8 +18,8 @@
 - **Budgets** — per-category monthly limits with overage alerts.
 - **Net worth** — assets − liabilities, broken down by asset class, all in INR.
 - **Export** — CSV (raw data) and PDF (formatted report).
-- **Three interfaces** — `wealthlog` (web/desktop), `wealthlog-tui` (terminal),
-  `wealthlog-cli` (scriptable).
+- **Three interfaces** — `wealthlog` (web/desktop, full CLI/TUI feature parity),
+  `wealthlog-tui` (terminal), `wealthlog-cli` (scriptable).
 
 INR is the single display currency; USD assets are auto-converted using a cached
 live FX rate, and the UI always shows when the rate was last fetched.
@@ -100,8 +100,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer guide.
 | DB / ORM | SQLite + SQLModel + Alembic |
 | CLI / TUI / Web | Typer / Textual / NiceGUI |
 | Market data | yfinance, mfapi.in, frankfurter.app |
-| Finance math | pyxirr, pandas |
-| Export | csv (stdlib), fpdf2 |
+| Finance math | pyxirr |
+| Export / import | csv (stdlib), fpdf2, openpyxl (broker statements) |
 
 ## Architecture
 
