@@ -8,6 +8,7 @@ is the presentation layer.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 from decimal import Decimal
 
@@ -145,9 +146,20 @@ def _expense_form() -> None:
     ui.button("Add", on_click=submit).props("color=primary")
 
 
-def _refresh_prices() -> None:
+def _do_refresh():
+    """Blocking price refresh; runs in a worker thread (own session)."""
     with session_scope() as session:
-        result = FetcherService(session).refresh_prices()
+        return FetcherService(session).refresh_prices()
+
+
+async def _refresh_prices() -> None:
+    # Bug #12: run the blocking yfinance/mfapi/FX work off the event loop so the
+    # whole UI doesn't freeze for the duration of the fetch.
+    note = ui.notification("Refreshing prices…", spinner=True, timeout=None)
+    try:
+        result = await asyncio.to_thread(_do_refresh)
+    finally:
+        note.dismiss()
     if result.failed:
         ui.notify(f"Refreshed {len(result.updated)}, {len(result.failed)} failed", type="warning")
     else:

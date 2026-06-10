@@ -254,3 +254,28 @@ class TestPriceSnapshots:
         snaps = self._snaps(db_session, inv.id)
         assert len(snaps) == 1
         assert snaps[0].price_inr == Decimal("1234.5600")
+
+
+class TestCachePruning:
+    """Bug #8 / 2a: append-only caches are bounded to the latest 5 rows."""
+
+    def test_price_cache_keeps_latest_five(self, db_session, portfolio):
+        inv = portfolio.add_investment("INFY.NS", "Infosys", AssetType.STOCK_IN)
+        svc = FetcherService(db_session)
+        for px in range(1, 8):  # 7 stores
+            svc._store_price(inv.id, Decimal(px), Decimal(px), None)
+        rows = db_session.exec(
+            select(PriceCache).where(PriceCache.investment_id == inv.id)
+        ).all()
+        assert len(rows) == 5
+        # The two oldest (price 1 and 2) are pruned; latest survive.
+        assert {r.price_inr for r in rows} == {Decimal(p) for p in range(3, 8)}
+
+    def test_fx_rates_keep_latest_five(self, db_session):
+        svc = FetcherService(db_session, fx_fetcher=FakeFxFetcher("83"))
+        for _ in range(7):  # force bypasses the freshness cache, so each call stores
+            svc.get_fx_rate(force=True)
+        rates = db_session.exec(
+            select(FxRate).where(FxRate.currency_pair == "USD_INR")
+        ).all()
+        assert len(rates) == 5

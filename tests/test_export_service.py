@@ -97,6 +97,15 @@ class TestPdf:
         assert out.exists()
         assert out.read_bytes().startswith(b"%PDF")
 
+    def test_pdf_embeds_unicode_font_for_rupee(self, export_svc, tmp_path):
+        # Bug #6: the bundled DejaVu font (with U+20B9) is embedded so ₹ renders.
+        from wealthlog.exporters import pdf_exporter
+
+        assert pdf_exporter._HAS_UNICODE is True
+        assert pdf_exporter._RUPEE == "₹"
+        out = export_svc.export_pdf_report(tmp_path / "u.pdf")
+        assert b"DejaVu" in out.read_bytes()  # subset font embedded in the PDF
+
     def test_pdf_with_fd(self, export_svc, db_session, tmp_path):
         PortfolioService(db_session).add_fd(
             "SBI FD", "100000", "7.1", dt.date(2024, 1, 1), dt.date(2027, 1, 1)

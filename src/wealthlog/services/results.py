@@ -10,7 +10,19 @@ import datetime as dt
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from wealthlog.constants import AssetType
+from wealthlog.constants import AssetType, LiabilityCategory
+
+
+@dataclass(frozen=True)
+class LiabilityRow:
+    """A single liability for display."""
+
+    id: int
+    name: str
+    amount_inr: Decimal
+    category: LiabilityCategory
+    due_date: dt.date | None
+    notes: str | None
 
 
 @dataclass(frozen=True)

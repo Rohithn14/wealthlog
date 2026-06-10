@@ -155,6 +155,58 @@ class TestNetWorthCommands:
         assert "2026-01" in res.output
 
 
+class TestLiabilityCommands:
+    def test_add_list_update_delete(self):
+        assert run("liability", "add", "Home loan", "250000", "-c", "LOAN").exit_code == 0
+        res = run("liability", "list")
+        assert res.exit_code == 0
+        assert "Home loan" in res.output and "Total liabilities" in res.output
+        assert run("liability", "update", "1", "200000").exit_code == 0
+        assert run("liability", "delete", "1").exit_code == 0
+        assert run("liability", "delete", "1").exit_code == 1
+
+    def test_liability_offsets_net_worth(self):
+        run("liability", "add", "Loan", "500")
+        res = run("networth", "show", "-f", "json")
+        import json
+
+        data = json.loads(res.output)
+        assert data["total_liabilities_inr"] == "500.00"
+
+
+class TestMachineOutput:
+    def test_expense_list_json(self):
+        run("expense", "add", "250.50", "-d", "2026-06-05")
+        res = run("expense", "list", "--format", "json")
+        assert res.exit_code == 0
+        import json
+
+        rows = json.loads(res.output)
+        assert rows[0]["amount_inr"] == "250.50"  # Decimal preserved as string
+
+    def test_expense_list_csv(self):
+        run("expense", "add", "250.50", "-d", "2026-06-05")
+        res = run("expense", "list", "-f", "csv")
+        assert res.exit_code == 0
+        assert "amount_inr" in res.output and "250.50" in res.output
+
+    def test_networth_show_json_nested(self):
+        run("invest", "add", "INFY.NS", "Infosys", "-t", "STOCK_IN")
+        run("invest", "buy", "INFY.NS", "10", "1500", "-d", "2026-01-15")
+        res = run("networth", "show", "--format", "json")
+        import json
+
+        data = json.loads(res.output)
+        assert "by_asset_class" in data and isinstance(data["by_asset_class"], list)
+
+    def test_holdings_csv(self):
+        run("invest", "add", "INFY.NS", "Infosys", "-t", "STOCK_IN")
+        run("invest", "buy", "INFY.NS", "10", "1500", "-d", "2026-01-15")
+        res = run("invest", "holdings", "-f", "csv")
+        assert res.exit_code == 0
+        assert "symbol" in res.output and "INFY.NS" in res.output
+
+
 class TestTopLevel:
     def test_version(self):
         res = run("version")

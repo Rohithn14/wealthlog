@@ -65,6 +65,14 @@ class AlertKind(StrEnum):
     SIP_DUE = "SIP_DUE"  # one or more SIP instalments are pending
 
 
+class LiabilityCategory(StrEnum):
+    """Kinds of liability tracked against net worth."""
+
+    LOAN = "LOAN"
+    CREDIT_CARD = "CREDIT_CARD"
+    OTHER = "OTHER"
+
+
 class CompoundingFrequency(StrEnum):
     """Interest compounding frequency for fixed deposits."""
 

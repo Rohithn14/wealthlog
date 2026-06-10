@@ -9,7 +9,7 @@ import typer
 from sqlmodel import select
 
 from wealthlog.cli._db import session_scope
-from wealthlog.cli._render import console, fmt_inr, make_table
+from wealthlog.cli._render import OutputFormat, console, emit, fmt_inr, make_table
 from wealthlog.constants import RecurrenceFrequency
 from wealthlog.db.models import Category
 from wealthlog.services.expense import ExpenseService
@@ -59,13 +59,17 @@ def list_expenses(
     end: Annotated[str | None, typer.Option("--end", help="YYYY-MM-DD")] = None,
     category: Annotated[str | None, typer.Option("--category", "-c")] = None,
     tags: Annotated[str | None, typer.Option("--tags")] = None,
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
 ) -> None:
     """List expenses, optionally filtered by date range, category, or tags."""
     with session_scope() as session:
         category_id = None
         if category:
             cat = session.exec(select(Category).where(Category.name == category)).first()
-            category_id = cat.id if cat else -1
+            if cat is None:
+                console.print(f"[red]Unknown category '{category}'. Use 'category list'.[/red]")
+                raise typer.Exit(code=1)
+            category_id = cat.id
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         svc = ExpenseService(session)
         rows = svc.list_expenses(
@@ -74,6 +78,9 @@ def list_expenses(
             category_id=category_id,
             tags=tag_list,
         )
+        if fmt is not OutputFormat.table:
+            emit(rows, fmt)
+            return
         table = make_table("Expenses", ["Date", "Amount", "Category", "Description", "Tags"])
         for e in rows:
             cat = session.get(Category, e.category_id) if e.category_id else None
@@ -89,11 +96,15 @@ def list_expenses(
 def summary(
     year: Annotated[int, typer.Argument(help="Year, e.g. 2026")],
     month: Annotated[int, typer.Argument(help="Month 1-12")],
+    fmt: Annotated[OutputFormat, typer.Option("--format", "-f")] = OutputFormat.table,
 ) -> None:
     """Show a monthly expense summary with per-category breakdown."""
     with session_scope() as session:
         svc = ExpenseService(session)
         result = svc.monthly_summary(year, month)
+        if fmt is not OutputFormat.table:
+            emit(result, fmt)
+            return
         table = make_table(f"Summary {year}-{month:02d}", ["Category", "Spent"])
         for name, amount in sorted(result.by_category.items(), key=lambda kv: kv[1], reverse=True):
             table.add_row(name, fmt_inr(amount))

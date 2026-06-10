@@ -19,6 +19,7 @@ from wealthlog.cli.commands import (
     imports,
     income,
     invest,
+    liability,
     networth,
 )
 
@@ -35,6 +36,7 @@ app.add_typer(category.app, name="category")
 app.add_typer(budget.app, name="budget")
 app.add_typer(invest.app, name="invest")
 app.add_typer(networth.app, name="networth")
+app.add_typer(liability.app, name="liability")
 app.add_typer(export.app, name="export")
 app.add_typer(imports.app, name="import")
 app.add_typer(alert.app, name="alert")

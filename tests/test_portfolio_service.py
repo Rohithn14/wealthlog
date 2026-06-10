@@ -266,3 +266,11 @@ class TestMaturedFdXirr:
         # Both should report ~10%; querying long after maturity must not dilute it.
         assert abs(at_maturity - Decimal("0.10")) < Decimal("0.01")
         assert abs(well_after - at_maturity) < Decimal("0.001")
+
+    def test_maturity_before_start_rejected(self, svc):
+        # Bug #13: reject the bad row at insert time, not on every later valuation.
+        with pytest.raises(ValueError, match="maturity_date"):
+            svc.add_fd(
+                "Bad FD", "100000", "7", dt.date(2025, 1, 1), dt.date(2024, 1, 1),
+                compounding=CompoundingFrequency.ANNUAL,
+            )

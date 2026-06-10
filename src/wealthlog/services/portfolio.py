@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from sqlmodel import Session, select
 
+from wealthlog.clock import utcnow
 from wealthlog.config import get_config
 from wealthlog.constants import (
     INFLOW_TRANSACTION_TYPES,
@@ -93,6 +94,9 @@ class PortfolioService:
             The created FD :class:`Investment`.
         """
         from wealthlog.constants import CompoundingFrequency
+
+        if maturity_date < start_date:
+            raise ValueError("maturity_date must be on or after start_date")
 
         inv = self.add_investment(
             symbol=symbol or name,
@@ -235,7 +239,7 @@ class PortfolioService:
         if fetched_at is None:
             return True
         ttl = get_config().cache_ttl.for_asset(asset_type)
-        return (dt.datetime.now() - fetched_at) > ttl
+        return (utcnow() - fetched_at) > ttl
 
     # ------------------------------------------------------------------ reads
 
