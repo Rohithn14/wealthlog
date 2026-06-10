@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy import JSON, Column, Index, UniqueConstraint
+from sqlalchemy import JSON, CheckConstraint, Column, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from wealthlog.constants import (
@@ -59,7 +59,11 @@ class Expense(SQLModel, table=True):
 
     __tablename__ = "expenses"
     # Composite serves BudgetService._spent (filters on category_id + date range).
-    __table_args__ = (Index("ix_expenses_category_date", "category_id", "date"),)
+    # DecimalText stores TEXT, so sign checks cast to REAL (precision irrelevant here).
+    __table_args__ = (
+        Index("ix_expenses_category_date", "category_id", "date"),
+        CheckConstraint("CAST(amount_inr AS REAL) > 0", name="ck_expense_amount_pos"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     date: dt.date = Field(index=True)
@@ -107,6 +111,10 @@ class Budget(SQLModel, table=True):
     __tablename__ = "budgets"
     __table_args__ = (
         UniqueConstraint("category_id", "month", "year", name="uq_budget_category_month_year"),
+        CheckConstraint("month BETWEEN 1 AND 12", name="ck_budget_month_range"),
+        CheckConstraint(
+            "CAST(limit_amount_inr AS REAL) > 0", name="ck_budget_limit_pos"
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -141,7 +149,13 @@ class Transaction(SQLModel, table=True):
 
     __tablename__ = "transactions"
     # Serves _market_holding and per-investment date-ranged queries.
-    __table_args__ = (Index("ix_transactions_inv_date", "investment_id", "date"),)
+    __table_args__ = (
+        Index("ix_transactions_inv_date", "investment_id", "date"),
+        CheckConstraint("CAST(units AS REAL) >= 0", name="ck_transaction_units_nonneg"),
+        CheckConstraint(
+            "CAST(price_per_unit AS REAL) >= 0", name="ck_transaction_price_nonneg"
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     investment_id: int = Field(foreign_key="investments.id", index=True)
@@ -222,6 +236,10 @@ class FdDetails(SQLModel, table=True):
     """Fixed-deposit parameters for an FD-type investment (value is computed, not fetched)."""
 
     __tablename__ = "fd_details"
+    __table_args__ = (
+        CheckConstraint("CAST(principal AS REAL) > 0", name="ck_fd_principal_pos"),
+        CheckConstraint("maturity_date >= start_date", name="ck_fd_maturity_after_start"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     investment_id: int = Field(foreign_key="investments.id", unique=True, index=True)
