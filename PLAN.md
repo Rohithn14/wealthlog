@@ -6,7 +6,18 @@
 >
 > **Milestone C — partial.** C3 alerts complete (`services/alerts.py`, tables migration `ac8711fd3f88`, `wealthlog-cli alert`, `wealthlog-alerts` watcher). C1 sidecar/IPC contract complete (`wealthlog.sidecar`, `wealthlog-sidecar`, `docs/DESKTOP.md`); the Tauri/React frontend (C1 phases 2–4) and C2 Textual-widget enhancements remain deferred — they can't be built/tested headless (see `docs/DESKTOP.md`).
 >
-> Remaining LOW bugs (#2, #6, #8, #13–#18) and Task-2 items (LiabilityService, CHECK constraints, PriceCache pruning, `--json/--csv` flags) are still open.
+> **Task-2 polish — DONE (branch `feat/task2-polish`).** All remaining LOW bugs fixed:
+> #2 bootstrap once-per-engine + concurrent-seed guard; #6 embedded DejaVu Unicode font
+> (renders `₹`); #8 cache pruning (latest 5) + composite indexes (migration `b1c2d3e4f5a6`);
+> #12 async NiceGUI price refresh; #13 FD maturity-before-start guard; #14 SQL CHECK
+> constraints (migration `c2d3e4f5a6b7`); #15 expense-list unknown-category exit; #16 naive-UTC
+> cache clock (`wealthlog.clock`); #17 dropped unused pandas; #18 `to_fx` (already in B-series).
+> Task-2 items: 2a pruning+indexes, 2b LiabilityService (`services/liability.py`, migration
+> `980cbd7b6e1e`, `wealthlog-cli liability`), 2c CHECK constraints, 2e `--format json|csv` on
+> read commands + FD-xirr note. Suite 409 passing, ruff clean, all migrations round-trip.
+>
+> Only the pure-frontend work remains deferred (can't build/test headless): C1 Tauri/React
+> phases 2–4 and C2 Textual-widget enhancements — see `docs/DESKTOP.md`.
 
 ## Bug Report (Task 1)
 
