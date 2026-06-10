@@ -1,7 +1,8 @@
 """Net-worth aggregation across asset classes.
 
-v1 has no liabilities model, so total liabilities are zero and net worth equals total
-investment assets (valued in INR). ``historical_net_worth`` returns a cost-basis series
+Net worth = gross investment assets (valued in INR) minus total liabilities (loans,
+credit-card balances) tracked by :class:`LiabilityService`.
+``historical_net_worth`` returns a cost-basis series
 (cumulative net invested per month), since true historical market values would require
 historical price data that wealthlog does not store in v1.
 """
@@ -19,6 +20,7 @@ from wealthlog.db.models import FdDetails, Investment, PriceSnapshot, Transactio
 from wealthlog.finance.fd import calculate_fd_value
 from wealthlog.logging_conf import get_logger
 from wealthlog.money import to_money
+from wealthlog.services.liability import LiabilityService
 from wealthlog.services.portfolio import PortfolioService
 from wealthlog.services.results import AssetClassValue, NetWorth, NetWorthPoint
 
@@ -67,7 +69,7 @@ class NetWorthService:
         ]
         breakdown.sort(key=lambda a: a.market_value_inr, reverse=True)
 
-        liabilities = _ZERO
+        liabilities = LiabilityService(self.session).total_liabilities()
         return NetWorth(
             as_of=as_of,
             total_assets_inr=total_assets,

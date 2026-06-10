@@ -23,6 +23,7 @@ from wealthlog.constants import (
     AssetType,
     CategoryType,
     CompoundingFrequency,
+    LiabilityCategory,
     RecurrenceFrequency,
     TransactionType,
 )
@@ -265,6 +266,22 @@ class AlertRule(SQLModel, table=True):
     investment_id: int | None = Field(default=None, foreign_key="investments.id", index=True)
     category_id: int | None = Field(default=None, foreign_key="categories.id", index=True)
     active: bool = Field(default=True)
+
+
+class Liability(SQLModel, table=True):
+    """A debt (loan, credit-card balance, …) that offsets net worth."""
+
+    __tablename__ = "liabilities"
+    __table_args__ = (
+        CheckConstraint("CAST(amount_inr AS REAL) >= 0", name="ck_liability_amount_nonneg"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    amount_inr: Decimal = Field(sa_column=Column(DecimalText(MONEY_QUANTET), nullable=False))
+    category: LiabilityCategory = Field(default=LiabilityCategory.OTHER, index=True)
+    due_date: dt.date | None = None
+    notes: str | None = None
 
 
 class AlertEvent(SQLModel, table=True):
