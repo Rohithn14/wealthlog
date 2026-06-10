@@ -1,5 +1,12 @@
 # wealthlog — Dev Plan
 
+> **Status (2026-06-10):** Web-UI layer (`api/server.py`, NiceGUI) bug-swept and
+> covered — see **Web UI Bug Report** below. WUI-1 (async refresh crash) and WUI-2
+> (spurious load-time notification) fixed; `tests/test_web_ui.py` drives the page
+> headlessly via NiceGUI's `User` simulation (every tab + the fixed paths), lifting
+> `api/server.py` coverage from 10% → ~73%. `wealthlog.api` added to the coverage
+> source; `pytest-asyncio` added (dev), `asyncio_mode = "auto"`.
+>
 > **Status (2026-06-09):** Bugs #4, #5, #7, #9-gap, #10, #11 fixed; Milestone A (A1–A4) implemented — `migrations/versions/32511e50be85_*`, `services/{income,recurring,sip}.py`, market-mode `networth history`.
 >
 > **Milestone B — DONE.** B1 benchmark (`services/benchmark.py`, `invest benchmark`), B2 FIFO capital-gains tax (`services/tax.py`, `invest tax-report`), B3 broker import (`services/importer.py`, `wealthlog-cli import`), B4 concentration (`services/concentration.py` + `investments.sector` migration `4a58bfdfca0b`), B5 dividends (`services/dividends.py`, `invest dividends`).
@@ -43,6 +50,27 @@ Legend: severity CRITICAL / HIGH / MEDIUM / LOW. "NOT A BUG" entries are areas f
 | 16 | `services/fetcher.py:241-243`, `models.py:138` | LOW | All timestamps are naive `datetime.now()` local time; a TZ change (or WSL clock skew) silently mis-ages the cache (negative or inflated staleness). | Store UTC (`datetime.now(dt.UTC)`) consistently; one-time migration is unnecessary if staleness tolerates a single mixed window. |
 | 17 | `pyproject.toml:17` | LOW | `pandas>=3.0.3` is declared but never imported anywhere in `src/` — dead weight (~60 MB) in every install. | Remove it (or keep it deliberately for B3 broker-import which will need `read_excel`). |
 | 18 | `services/portfolio.py:141` | LOW | `Decimal(fx_rate_used)` bypasses `to_decimal`'s float guard — a float fx rate sneaks in with binary-float noise, unlike every other monetary input. | Use `to_fx(fx_rate_used)`. |
+
+---
+
+## Web UI Bug Report (NiceGUI `api/server.py`)
+
+Audit of the web/desktop UI layer after `feat/web-ui-full-parity`. Both bugs are
+fixed on this branch with regression tests in `tests/test_web_ui.py`.
+
+| # | File:Lines | Severity | Root Cause | Fix |
+|---|-----------|----------|------------|-----|
+| WUI-1 | `api/server.py:757-760` (`_holdings_panel`) | HIGH | The "Refresh prices" button scheduled its async handler with `on_click=lambda: asyncio.ensure_future(_refresh_prices())`. `ensure_future` runs the coroutine as a detached task with an **empty slot stack**, so the first `ui.notification(...)` inside it raised `RuntimeError: The current slot cannot be determined…` and the refresh silently died (task exception never retrieved). | Pass the coroutine function directly: `on_click=_refresh_prices`. NiceGUI awaits async click handlers inside the client context, so the spinner/summary notifications render correctly. |
+| WUI-2 | `api/server.py:1449-1456` (`_networth_history_view`) | LOW (UX) | The History panel calls its `@ui.refreshable history_view()` once at build time. With the date inputs still empty, `dt.date.fromisoformat("")` raised `ValueError`, firing a spurious **"Invalid date format"** error toast on *every* page load (the panel is built eagerly with all other tabs). | Guard the empty-input case: show a `"Enter a start date and click Show history."` prompt and return before parsing, so the error toast only appears for genuinely malformed input the user typed. |
+
+**Test approach.** `tests/test_web_ui.py` uses `nicegui.testing.User` (headless, no
+selenium) to: render every top-level tab + sub-panel (build-time smoke); click
+every reachable action button with empty forms and assert no uncaught
+exception/ERROR log (the `User` teardown enforces this); drive the seeded
+dashboard/holdings/net-worth/analysis read paths; and regression-test WUI-1
+(offline-stubbed refresh, asserting the in-context summary) and WUI-2 (no
+notification on load). The full NiceGUI test plugin needs selenium, so the root
+`conftest.py` registers only `nicegui.testing.user_plugin`.
 
 ---
 

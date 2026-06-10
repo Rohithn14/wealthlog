@@ -12,6 +12,10 @@ from collections.abc import Iterator
 import pytest
 from sqlmodel import Session
 
+#: The full NiceGUI test plugin needs selenium; the user_plugin drives pages
+#: headlessly (httpx + simulated client), which is all the web-UI tests need.
+pytest_plugins = ["nicegui.testing.user_plugin"]
+
 
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(tmp_path, monkeypatch) -> Iterator[None]:
