@@ -1,0 +1,25 @@
+# Graphify ignore — keep graph focused on application code
+
+# Alembic migration DDL (version files are schema diffs, not architecture)
+migrations/versions/
+migrations/script.py.mako
+migrations/README
+
+# Binary assets
+src/wealthlog/exporters/fonts/
+
+# Dependency lock file
+uv.lock
+
+# Documentation
+docs/
+*.md
+
+# CI/CD
+.github/
+
+# Claude Code config
+.claude/
+
+# Graphify output (avoid self-referential cycles)
+graphify-out/
